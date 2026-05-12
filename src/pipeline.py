@@ -3,7 +3,8 @@ import joblib
 import pandas as pd
 import numpy as np
 import optuna
-from typing import Dict, Any, Tuple
+from tqdm import tqdm
+from typing import Dict, Any, Tuple, Optional
 from sklearn.metrics import precision_recall_curve, auc
 
 from src.config import (
@@ -75,7 +76,15 @@ class PathGuardTrainingPipeline:
             return float(auc(recall, precision))
             
         study = optuna.create_study(direction="maximize")
-        study.optimize(objective, n_trials=self.n_trials)
+        
+        # Use tqdm to show progress for Optuna trials
+        with tqdm(total=self.n_trials, desc="Optuna Optimization", unit="trial") as pbar:
+            def callback(study, trial):
+                pbar.update(1)
+                pbar.set_postfix({"Best PR-AUC": f"{study.best_value:.4f}"})
+            
+            study.optimize(objective, n_trials=self.n_trials, callbacks=[callback])
+            
         print(f"Optimization finished. Best PR-AUC: {study.best_value:.4f}")
         return study.best_params
 
@@ -110,7 +119,8 @@ class PathGuardTrainingPipeline:
         final_xgb.train(X_prep, y_clean)
         
         # Get Out-of-fold predictions to train honest Calibrators
-        for train_idx, val_idx in cv_splits:
+        print("Calculating OOF predictions for calibration...")
+        for train_idx, val_idx in tqdm(cv_splits, desc="CV for Calibration", unit="fold"):
             X_tr, y_tr = X_prep.iloc[train_idx], y_clean.iloc[train_idx]
             X_v, y_v = X_prep.iloc[val_idx], y_clean.iloc[val_idx]
             
