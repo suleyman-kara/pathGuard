@@ -15,23 +15,23 @@ Patojenik Sınıf: ClinVar ve ClinGen veri tabanlarından, "Expert Panel" ve gü
 
 Benign Sınıf: Sınıf dengesizliğini gidermek amacıyla ClinVar (1381 varyant) verilerine ek  olarak gnomAD veri tabanından ClinVar datasındaki genlerin sık görülen sağlıklı  popülasyon varyantları eklenecektir (∼ 1500 varyant). Veri setlerindeki 'Benign' (İyi Huylu)  ve 'Likely Benign' (Olası İyi Huylu) olarak tanımlanan varyantlar tek bir Benign sınıfı altında  birleştirilmiştir.
 
-Yarışmacılara dört ana başlık altında veri setleri sunulacaktır. Veri setlerinin  oluşturulmasında, yapay zekâ modellerinin eğitim süreçlerinde yanlılığı engellemek adına veri dengesi gözetilmiştir. Bu kapsamda, her bir veri setindeki Benign varyant sayısı,  Patojenik varyant sayısına yakın tutularak dengeli bir yapı oluşturulmuştur.
+Yarışmacılara dört ana başlık altında veri setleri sunulacaktır. Veri setlerinin  oluşturulmasında, yapay zekâ modellerinin eğitim süreçlerinde yanlılığı engellemek adına veri dengesi gözetilmiştir.
 
 
-Sağlanacak eğitim veri setlerinin içerdiği varyant sayıları aşağıdaki şekildedir:
+Sağlanacak eğitim veri setleri aşağıdaki şekildedir:
 
-* Genel Veri Seti: 1500 adet Patojenik varyant, 1500 adet Benign Varyant  
-* Kalıtsal (Herediter) Kanser Paneli: 200 adet Patojenik varyant, 200 adet Benign varyant  
-* Fenilketonüri (PAH) Gen Paneli: 200 adet Patojenik varyant, 200 adet Benign varyant  
-* Kistik Fibrozis (CFTR) Gen Paneli: 70 adet Patojenik varyant, 70 adet Benign varyant.
+* Genel Veri Seti
+* Kalıtsal (Herediter) Kanser Paneli
+* Fenilketonüri (PAH) Gen Paneli
+* Kistik Fibrozis (CFTR) Gen Paneli
 
 
-Sağlanacak test veri setlerinin içerdiği varyant sayıları aşağıdaki şekildedir:
+Sağlanacak test veri setleri aşağıdaki şekildedir:
 
-* Genel Veri Seti: 1000 adet Patojenik varyant, 1000 adet Benign varyant,  
-* Kalıtsal (Herediter) Kanser Paneli: 100 adet Patojenik varyant, 100 adet Benign  varyant  
-* Fenilketonüri (PAH) Gen Paneli: 100 adet Patojenik varyant, 100 adet Benign varyant  
-* Kistik Fibrozis (CFTR) Gen Paneli: 30 adet Patojenik varyant, 30 adet Benign varyant.
+* Genel Veri Seti   
+* Kalıtsal (Herediter) Kanser Paneli
+* Fenilketonüri (PAH) Gen Paneli
+* Kistik Fibrozis (CFTR) Gen Paneli
 
 Toplam veri havuzu, model geliştirme süreçlerinin sağlıklı yürütülmesi adına ikiye  ayrılmıştır: 
 
