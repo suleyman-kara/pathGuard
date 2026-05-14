@@ -1,9 +1,16 @@
 import json
+import os
+import tempfile
+from pathlib import Path
+
+os.environ.setdefault("MPLCONFIGDIR", tempfile.mkdtemp(prefix="pathguard_matplotlib_"))
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from typing import Dict, Any, Tuple
+from typing import Any, Dict, Optional
 from sklearn.metrics import (
+    brier_score_loss,
     f1_score,
     precision_recall_curve,
     auc,
@@ -43,6 +50,10 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_probs: np.ndarra
         
     bal_acc = balanced_accuracy_score(y_true, y_pred)
     mcc = matthews_corrcoef(y_true, y_pred)
+    try:
+        brier = brier_score_loss(y_true, y_probs)
+    except ValueError:
+        brier = 0.0
     
     return {
         "Macro_F1": float(macro_f1),
@@ -52,13 +63,19 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_probs: np.ndarra
         "Sensitivity": float(sensitivity),
         "Specificity": float(specificity),
         "Balanced_Accuracy": float(bal_acc),
-        "MCC": float(mcc)
+        "MCC": float(mcc),
+        "Brier_Score": float(brier)
     }
 
 def save_metrics_report(metrics: Dict[str, float], file_name: str = "evaluation_metrics.json") -> None:
     out_path = OUTPUT_DIR / file_name
     with open(out_path, "w") as f:
         json.dump(metrics, f, indent=4)
+
+def save_json_report(report: Dict[str, Any], file_name: str) -> None:
+    out_path = OUTPUT_DIR / file_name
+    with open(out_path, "w") as f:
+        json.dump(report, f, indent=4)
 
 def plot_precision_recall_curve(y_true: np.ndarray, y_probs: np.ndarray, file_name: str = "pr_curve.png") -> None:
     precision, recall, _ = precision_recall_curve(y_true, y_probs)
@@ -77,7 +94,7 @@ def plot_precision_recall_curve(y_true: np.ndarray, y_probs: np.ndarray, file_na
 def plot_reliability_diagram(y_true: np.ndarray, y_probs: np.ndarray, n_bins: int = 10, file_name: str = "calibration_curve.png") -> None:
     """Plots custom empirical calibration curve to verify post-calibration behavior."""
     bins = np.linspace(0.0, 1.0, n_bins + 1)
-    binids = np.digitize(y_probs, bins) - 1
+    binids = np.clip(np.digitize(y_probs, bins) - 1, 0, n_bins - 1)
     
     bin_sums = np.bincount(binids, weights=y_probs, minlength=n_bins)
     bin_true = np.bincount(binids, weights=y_true, minlength=n_bins)
@@ -97,3 +114,81 @@ def plot_reliability_diagram(y_true: np.ndarray, y_probs: np.ndarray, n_bins: in
     plt.grid(True, alpha=0.3)
     plt.savefig(OUTPUT_DIR / file_name, dpi=300, bbox_inches="tight")
     plt.close()
+
+def save_error_analysis(
+    variant_ids: pd.Series,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_probs: np.ndarray,
+    file_name: str,
+    max_rows: Optional[int] = None
+) -> None:
+    """Writes false-positive/false-negative rows for clinical review."""
+    out_df = pd.DataFrame({
+        "Variant_ID": variant_ids.reset_index(drop=True),
+        "True_Label": y_true,
+        "Prediction": y_pred,
+        "Probability": y_probs
+    })
+    out_df["Error_Type"] = np.select(
+        [
+            (out_df["True_Label"] == 1) & (out_df["Prediction"] == 0),
+            (out_df["True_Label"] == 0) & (out_df["Prediction"] == 1)
+        ],
+        ["FN", "FP"],
+        default="Correct"
+    )
+    out_df = out_df[out_df["Error_Type"] != "Correct"].sort_values(
+        by=["Error_Type", "Probability"],
+        ascending=[True, False]
+    )
+    if max_rows is not None:
+        out_df = out_df.head(max_rows)
+    out_df.to_csv(OUTPUT_DIR / file_name, index=False)
+
+def save_feature_importance(
+    model: Any,
+    feature_names: list[str],
+    file_name: str,
+    importance_type: str = "gain"
+) -> None:
+    """Saves LightGBM/XGBoost compatible feature importances when available."""
+    raw_model = getattr(model, "model", model)
+    if hasattr(raw_model, "booster_"):
+        importances = raw_model.booster_.feature_importance(importance_type=importance_type)
+    elif hasattr(raw_model, "feature_importances_"):
+        importances = raw_model.feature_importances_
+    else:
+        return
+
+    out_df = pd.DataFrame({
+        "feature": feature_names,
+        f"importance_{importance_type}": importances
+    }).sort_values(f"importance_{importance_type}", ascending=False)
+    out_df.to_csv(OUTPUT_DIR / file_name, index=False)
+
+def save_permutation_importance(
+    model: Any,
+    X: pd.DataFrame,
+    y: pd.Series,
+    file_name: str,
+    n_repeats: int = 5
+) -> None:
+    """Computes a compact permutation importance report for feature-selection review."""
+    from sklearn.inspection import permutation_importance
+
+    result = permutation_importance(
+        model.model if hasattr(model, "model") else model,
+        X,
+        y,
+        scoring="f1_macro",
+        n_repeats=n_repeats,
+        random_state=42,
+        n_jobs=1
+    )
+    out_df = pd.DataFrame({
+        "feature": list(X.columns),
+        "importance_mean": result.importances_mean,
+        "importance_std": result.importances_std
+    }).sort_values("importance_mean", ascending=False)
+    out_df.to_csv(OUTPUT_DIR / file_name, index=False)

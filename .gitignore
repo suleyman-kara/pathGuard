@@ -432,10 +432,9 @@ FodyWeavers.xsd
 *.msp
 
 # PathGuard Specific
-outputs/
-models/
+/outputs/
+/models/
 data/processed/
 .venv/
 __pycache__/
 *.joblib
-

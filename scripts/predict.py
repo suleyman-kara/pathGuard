@@ -14,11 +14,22 @@ from src.config import MODEL_DIR, OUTPUT_DIR
 from src.data_loader import load_data
 from src.models.lgbm_model import LightGBMVariantModel
 from src.models.xgb_model import XGBoostVariantModel
-from src.models.ensemble import CalibratedVariantModel, SoftVotingEnsemble
+from src.models.ensemble import CalibratedVariantModel, LogisticStackingEnsemble, SoftVotingEnsemble
 from src.models.panel_model import PanelMetaLearner
 
-def load_master_ensemble() -> Tuple[SoftVotingEnsemble, float]:
-    """Loads the fully trained calibrated Soft-Voting Master Ensemble and optimal threshold."""
+def load_master_ensemble() -> Tuple[object, float]:
+    """Loads the trained calibrated master ensemble and optimal threshold."""
+    required = [
+        MODEL_DIR / "master_lgbm.joblib",
+        MODEL_DIR / "master_xgb.joblib",
+        MODEL_DIR / "calibrator_lgbm.joblib",
+        MODEL_DIR / "calibrator_xgb.joblib",
+        MODEL_DIR / "ensemble_meta.joblib",
+    ]
+    missing = [str(path) for path in required if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"Missing trained artifacts. Run training first. Missing: {missing}")
+
     lgbm = LightGBMVariantModel().load(str(MODEL_DIR / "master_lgbm.joblib"))
     xgb = XGBoostVariantModel().load(str(MODEL_DIR / "master_xgb.joblib"))
     
@@ -30,8 +41,15 @@ def load_master_ensemble() -> Tuple[SoftVotingEnsemble, float]:
     cal_xgb.calibrator = joblib.load(MODEL_DIR / "calibrator_xgb.joblib")
     cal_xgb.is_fitted = True
     
-    ensemble = SoftVotingEnsemble([cal_lgbm, cal_xgb], weights=[0.6, 0.4])
     meta = joblib.load(MODEL_DIR / "ensemble_meta.joblib")
+    ensemble_type = meta.get("ensemble_type", "soft_voting")
+    if ensemble_type == "logistic_stacking":
+        stacker_path = MODEL_DIR / "stacker_logistic.joblib"
+        if not stacker_path.exists():
+            raise FileNotFoundError(f"Missing stacking artifact: {stacker_path}")
+        ensemble = LogisticStackingEnsemble([cal_lgbm, cal_xgb], stacker=joblib.load(stacker_path))
+    else:
+        ensemble = SoftVotingEnsemble([cal_lgbm, cal_xgb], weights=[0.6, 0.4])
     return ensemble, meta["threshold"]
 
 def main() -> None:
@@ -57,11 +75,23 @@ def main() -> None:
     X_raw, _, variant_ids = load_data(str(input_path), is_test=True)
     
     print("Loading global Feature Encoder...")
-    encoder = joblib.load(MODEL_DIR / "feature_encoder.joblib")
-    X_prep = encoder.transform(X_raw, for_tree=True)
+    encoder_path = MODEL_DIR / "feature_encoder.joblib"
+    if not encoder_path.exists():
+        print(f"Error: Missing encoder artifact {encoder_path}. Run training first.")
+        sys.exit(1)
+    encoder = joblib.load(encoder_path)
+    try:
+        X_prep = encoder.transform(X_raw, for_tree=True)
+    except ValueError as exc:
+        print(f"Error: Input schema validation failed. {exc}")
+        sys.exit(1)
     
     print(f"Loading inference weights for context: {args.panel}...")
-    master_ensemble, best_threshold = load_master_ensemble()
+    try:
+        master_ensemble, best_threshold = load_master_ensemble()
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"Error: {exc}")
+        sys.exit(1)
     
     start_inf = time.time()
     if args.panel == "MASTER":

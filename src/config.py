@@ -1,5 +1,8 @@
 import os
+import tempfile
 from pathlib import Path
+
+os.environ.setdefault("MPLCONFIGDIR", tempfile.mkdtemp(prefix="pathguard_matplotlib_"))
 
 # Base Paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -8,6 +11,7 @@ RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 MODEL_DIR = PROJECT_ROOT / "models"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
+EXPERIMENT_LOG = OUTPUT_DIR / "experiment_log.jsonl"
 
 # Ensure output directories exist
 os.makedirs(PROCESSED_DATA_DIR, exist_ok=True)
@@ -31,6 +35,7 @@ AA_COLS = ["AA_1", "AA_2"]
 
 # Cross Validation Parameters
 CV_FOLDS = 5
+PANEL_CV_REPEATS = 10
 EARLY_STOPPING_ROUNDS = 50
 OPTUNA_TRIALS = 30  # Optimized for 10-minute compile/run budget on CPU
 
