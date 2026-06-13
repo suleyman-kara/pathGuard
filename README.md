@@ -17,8 +17,8 @@ PathGuard, missense genetik varyantların patojenik/benign sınıflandırması i
 Python sanal ortam ile:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -40,13 +40,13 @@ brew install libomp
 Tam eğitim:
 
 ```bash
-./.venv/bin/python scripts/train.py --trials 30
+./venv/bin/python scripts/train.py --trials 30
 ```
 
 Hızlı smoke test:
 
 ```bash
-./.venv/bin/python scripts/train.py --trials 1 --cv-repeats 1 --skip-shap
+./venv/bin/python scripts/train.py --trials 1 --cv-repeats 1 --skip-shap
 ```
 
 CLI seçenekleri:
@@ -62,13 +62,13 @@ CLI seçenekleri:
 Master model ile:
 
 ```bash
-./.venv/bin/python scripts/predict.py data/raw/TEST_FILE.csv --panel MASTER --output submission.csv
+./venv/bin/python scripts/predict.py data/raw/TEST_FILE.csv --panel MASTER --output submission.csv
 ```
 
 Panel modeli ile:
 
 ```bash
-./.venv/bin/python scripts/predict.py data/raw/CFTR_TEST.csv --panel CFTR --output cftr_submission.csv
+./venv/bin/python scripts/predict.py data/raw/CFTR_TEST.csv --panel CFTR --output cftr_submission.csv
 ```
 
 Girdi CSV'si eğitimde öğrenilen feature şemasıyla uyumlu olmalıdır. Eksik veya fazla kolon varsa tahmin script'i açık hata mesajı verir.
@@ -149,14 +149,14 @@ flowchart TD
 
 ## Son Eğitim Özeti
 
-`./.venv/bin/python scripts/train.py --trials 30` çalıştırması sonucunda seçilen master ensemble `logistic_stacking` olmuştur.
+`./venv/bin/python scripts/train.py --trials 30` çalıştırması sonucunda seçilen master ensemble `soft_voting` olmuştur.
 
-| Model | Macro F1 | PR-AUC | Sensitivity | Specificity |
+| Model | Class 1 F1 | PR-AUC | Sensitivity | Specificity |
 | --- | ---: | ---: | ---: | ---: |
-| Master OOF | 0.7929 | 0.9356 | 0.9002 | 0.6775 |
-| KANSER OOF | 0.8581 | 0.9455 | 0.9283 | 0.7750 |
-| PAH OOF | 0.7101 | 0.9124 | 0.9349 | 0.4500 |
-| CFTR OOF | 0.8825 | 0.9808 | 0.9556 | 0.8095 |
+| Master OOF | 0.8889 | 0.9237 | 0.9320 | 0.5385 |
+| KANSER OOF | 0.9257 | 0.9479 | 0.9396 | 0.8000 |
+| PAH OOF | 0.9325 | 0.9505 | 0.9674 | 0.4500 |
+| CFTR OOF | 0.9497 | 0.9763 | 0.9444 | 0.8095 |
 
 Panel metrikleri leakage-aware yorumlanmalıdır. Son eğitimde master-panel örtüşmeleri KANSER için `246/388`, PAH için `255/372`, CFTR için `77/111` olarak raporlanmıştır.
 
