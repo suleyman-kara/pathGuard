@@ -85,6 +85,7 @@ class PathGuardTrainingPipeline:
         self.best_threshold = 0.5
         self.ensemble_type = "soft_voting"
         self.panel_learners: Dict[str, PanelMetaLearner] = {}
+        self.panel_thresholds: Dict[str, float] = {}
         self.data_quality_report: Dict[str, Any] = {}
 
     def _log_experiment(self, event: str, payload: Dict[str, Any]) -> None:
@@ -223,7 +224,7 @@ class PathGuardTrainingPipeline:
                 "stacker": stacker,
             }
 
-        selected_name = max(candidates, key=lambda name: candidates[name]["metrics"]["Macro_F1"])
+        selected_name = max(candidates, key=lambda name: candidates[name]["metrics"]["Class1_F1"])
         selected = candidates[selected_name]
         self.ensemble_type = selected_name
         self.best_threshold = float(selected["threshold"])
@@ -302,7 +303,7 @@ class PathGuardTrainingPipeline:
 
         print(
             f"Selected Master Ensemble: {self.ensemble_type} "
-            f"(threshold={self.best_threshold:.3f}, Macro F1={master_metrics['Macro_F1']:.4f})"
+            f"(threshold={self.best_threshold:.3f}, Class 1 F1={master_metrics['Class1_F1']:.4f})"
         )
         save_metrics_report(master_metrics, file_name="master_metrics.json")
         plot_precision_recall_curve(y_clean.values, master_oof_probs, file_name="master_pr_curve.png")
@@ -376,7 +377,12 @@ class PathGuardTrainingPipeline:
                 raise ValueError(f"Panel CV failed to produce OOF predictions for every row: {p_name}")
 
             oof_probs = prob_sums / prob_counts
-            preds = (oof_probs >= self.best_threshold).astype(int)
+            
+            # Her panel için bağımsız karar eşiği optimizasyonu yapıyoruz
+            panel_t, _, _ = optimize_decision_threshold(y_clean.values, oof_probs)
+            self.panel_thresholds[p_name] = panel_t
+            
+            preds = (oof_probs >= panel_t).astype(int)
             metrics = calculate_metrics(y_clean.values, preds, oof_probs)
             metrics.update({
                 "Validation_Mode": "RepeatedStratifiedKFold_OOF",
@@ -411,10 +417,19 @@ class PathGuardTrainingPipeline:
                     engine.generate_waterfall_plot(sample_idx=int(idx), file_name=f"panel_{p_name}_shap_waterfall_{idx}.png")
 
             print(
-                f"Panel {p_name} OOF Macro F1: {metrics['Macro_F1']:.4f}, "
+                f"Panel {p_name} OOF Class 1 F1: {metrics['Class1_F1']:.4f}, "
                 f"Recall: {metrics['Sensitivity']:.4f}, Leakage-aware: {metrics['Leakage_Aware']}"
             )
             self._log_experiment(f"panel_{p_name}_training", metrics)
+
+        # Panel eşik değerlerini ensemble_meta.joblib dosyasına ekle
+        meta_path = MODEL_DIR / "ensemble_meta.joblib"
+        if meta_path.exists():
+            meta = joblib.load(meta_path)
+        else:
+            meta = {}
+        meta["panel_thresholds"] = self.panel_thresholds
+        joblib.dump(meta, meta_path)
 
     def execute_all(self) -> None:
         self._write_data_quality_report()

@@ -17,8 +17,8 @@ from src.models.xgb_model import XGBoostVariantModel
 from src.models.ensemble import CalibratedVariantModel, LogisticStackingEnsemble, SoftVotingEnsemble
 from src.models.panel_model import PanelMetaLearner
 
-def load_master_ensemble() -> Tuple[object, float]:
-    """Loads the trained calibrated master ensemble and optimal threshold."""
+def load_master_ensemble() -> Tuple[object, dict]:
+    """Loads the trained calibrated master ensemble and optimal threshold metadata."""
     required = [
         MODEL_DIR / "master_lgbm.joblib",
         MODEL_DIR / "master_xgb.joblib",
@@ -50,7 +50,7 @@ def load_master_ensemble() -> Tuple[object, float]:
         ensemble = LogisticStackingEnsemble([cal_lgbm, cal_xgb], stacker=joblib.load(stacker_path))
     else:
         ensemble = SoftVotingEnsemble([cal_lgbm, cal_xgb], weights=[0.6, 0.4])
-    return ensemble, meta["threshold"]
+    return ensemble, meta
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="PathGuard Fast Inference Interface")
@@ -62,6 +62,11 @@ def main() -> None:
         default="MASTER", 
         choices=["MASTER", "KANSER", "PAH", "CFTR"],
         help="Specify context to load specialized Transfer Learning models."
+    )
+    parser.add_argument(
+        "--submission-only",
+        action="store_true",
+        help="Output only Variant_ID and Prediction columns for Teknofest submission formatting."
     )
     args = parser.parse_args()
     
@@ -88,15 +93,20 @@ def main() -> None:
     
     print(f"Loading inference weights for context: {args.panel}...")
     try:
-        master_ensemble, best_threshold = load_master_ensemble()
+        master_ensemble, meta = load_master_ensemble()
     except (FileNotFoundError, ValueError) as exc:
         print(f"Error: {exc}")
         sys.exit(1)
     
     start_inf = time.time()
     if args.panel == "MASTER":
+        best_threshold = meta.get("threshold", 0.5)
         probs = master_ensemble.predict_proba(X_prep)
     else:
+        # Alt panele ait karar eşiğini yükle, yoksa genel eşiği kullan
+        panel_thresholds = meta.get("panel_thresholds", {})
+        best_threshold = panel_thresholds.get(args.panel, meta.get("threshold", 0.5))
+        
         panel_file = MODEL_DIR / f"panel_{args.panel}.joblib"
         if not panel_file.exists():
             print(f"Error: Specialized weights {panel_file} missing. Run training first.")
@@ -113,11 +123,17 @@ def main() -> None:
     latency_ms = (inf_time / max(len(variant_ids), 1)) * 1000.0
     
     # Generate outputs
-    out_df = pd.DataFrame({
-        "Variant_ID": variant_ids,
-        "Probability": probs,
-        "Prediction": preds
-    })
+    if args.submission_only:
+        out_df = pd.DataFrame({
+            "Variant_ID": variant_ids,
+            "Prediction": preds
+        })
+    else:
+        out_df = pd.DataFrame({
+            "Variant_ID": variant_ids,
+            "Probability": probs,
+            "Prediction": preds
+        })
     
     out_file = OUTPUT_DIR / args.output
     out_df.to_csv(out_file, index=False)

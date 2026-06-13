@@ -9,8 +9,9 @@ from src.config import CLINICAL_RECALL_TARGET
 
 class CalibratedVariantModel:
     """
-    Wraps a base model with an Isotonic Regression calibrator.
-    Maps uncalibrated tree outputs to true empirical target posteriors.
+    Bir temel model (LightGBM veya XGBoost) etrafında olasılık kalibrasyon katmanı.
+    İzotonik Regresyon (Isotonic Regression) kullanarak ham model olasılıklarını
+    gerçek popülasyon olasılıklarına dönüştürür.
     """
     def __init__(self, base_model: BaseVariantModel):
         self.base_model = base_model
@@ -18,7 +19,7 @@ class CalibratedVariantModel:
         self.is_fitted = False
         
     def fit_calibration(self, oof_probs: np.ndarray, y_true: np.ndarray) -> "CalibratedVariantModel":
-        """Fits isotonic regression post-hoc on Out-of-Fold validation probabilities."""
+        # Out-of-fold (OOF) doğrulaması olasılıkları üzerinde kalibratörü eğitir
         self.calibrator.fit(oof_probs, y_true)
         self.is_fitted = True
         return self
@@ -31,16 +32,15 @@ class CalibratedVariantModel:
 
 class SoftVotingEnsemble:
     """
-    Combines multiple calibrated estimators via optimized soft-voting probability combination.
+    Birden fazla kalibre edilmiş modelin tahminlerini ağırlıklı ortalama ile birleştiren sınıf.
     """
     def __init__(self, models: List[CalibratedVariantModel], weights: Optional[List[float]] = None):
         self.models = models
         if weights is None:
             self.weights = [1.0 / len(models)] * len(models)
         else:
-            # Normalize weights
             s = sum(weights)
-            self.weights = [w / s for w in weights]
+            self.weights = [w / s for w in weights] # Ağırlıkları normalize et
             
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         final_probs = np.zeros(len(X))
@@ -50,9 +50,8 @@ class SoftVotingEnsemble:
 
 class LogisticStackingEnsemble:
     """
-    Logistic Regression meta-model over calibrated base estimator probabilities.
-    This keeps the report's stacking layer explicit while preserving the same
-    calibrated base-model interface used by soft voting.
+    Kalibre edilmiş modellerin çıktı olasılıkları üzerinde eğitilen
+    Lojistik Regresyon tabanlı Stacking (meta-öğrenme) katmanı.
     """
     def __init__(
         self,
@@ -73,7 +72,7 @@ class LogisticStackingEnsemble:
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         if not self.is_fitted:
-            raise ValueError("LogisticStackingEnsemble must be fitted before inference.")
+            raise ValueError("Stacking Ensemble eğitilmeden tahmin yapılamaz.")
         return self.stacker.predict_proba(self._meta_features(X))[:, 1]
 
 def optimize_decision_threshold(
@@ -82,44 +81,47 @@ def optimize_decision_threshold(
     recall_target: float = CLINICAL_RECALL_TARGET
 ) -> Tuple[float, float, float]:
     """
-    Pareto-optimal Decision Threshold Search under Asymmetric Shift:
-    Evaluates thresholds between 0.01 and 0.99.
-    Selects the threshold maximizing Macro F1 while satisfying Clinical Sensitivity (Recall) >= target.
-    
-    Returns:
-        best_threshold: Optimized decision boundary
-        best_f1: Macro F1 achieved at best threshold
-        achieved_recall: Recall achieved at best threshold
+    Karar Eşiği Optimizasyonu:
+    - Olasılık çıktıları (0.01 - 0.99) arasında tarama yapar.
+    - Klinik Duyarlılık (Recall/Sensitivity) >= hedef kısıtını sağlayan
+      ve en yüksek Patojenik Sınıf F1 Skorunu (Class 1 F1) veren eşiği seçer.
+      
+    Girdi:
+        y_true: Gerçek etiketler (0/1)
+        probs: Tahmin olasılıkları
+        recall_target: Klinik olarak tolere edilebilir minimum duyarlılık (varsayılan: 0.90)
+    Çıktı:
+        (optimal_esik, en_iyi_f1, saglanan_duyarlilik)
     """
     thresholds = np.linspace(0.01, 0.99, 99)
     best_thresh = 0.5
     best_f1 = -1.0
     best_recall = -1.0
     
-    # Store viable candidates satisfying clinical recall target
     viable_candidates = []
     
     for t in thresholds:
         preds = (probs >= t).astype(int)
-        # Using zero_division=0 to prevent verbose warnings during boundary edge scanning
-        macro_f1 = f1_score(y_true, preds, average="macro", zero_division=0)
+        # Macro F1 yerine doğrudan pathogenic sınıfı (class 1) F1 skorunu alıyoruz
+        c1_f1 = f1_score(y_true, preds, zero_division=0)
         recall = recall_score(y_true, preds, zero_division=0)
         
+        # Klinik duyarlılık kısıtını kontrol et
         if recall >= recall_target:
-            viable_candidates.append((macro_f1, recall, t))
+            viable_candidates.append((c1_f1, recall, t))
             
     if viable_candidates:
-        # Sort by Macro F1 descending
+        # Patojenik F1 skoruna göre azalan sırada sırala ve en yüksek olanı seç
         viable_candidates.sort(key=lambda x: x[0], reverse=True)
         best_f1, best_recall, best_thresh = viable_candidates[0]
     else:
-        # Fallback: if no candidate hits the recall target safely, select threshold maximizing Macro F1 directly
+        # Eğer hiçbir eşik klinik recall kısıtını sağlamıyorsa, doğrudan F1-pathogenic skorunu en üst düzeye çıkaranı seç
         for t in thresholds:
             preds = (probs >= t).astype(int)
-            macro_f1 = f1_score(y_true, preds, average="macro", zero_division=0)
+            c1_f1 = f1_score(y_true, preds, zero_division=0)
             recall = recall_score(y_true, preds, zero_division=0)
-            if macro_f1 > best_f1:
-                best_f1 = macro_f1
+            if c1_f1 > best_f1:
+                best_f1 = c1_f1
                 best_recall = recall
                 best_thresh = t
                 

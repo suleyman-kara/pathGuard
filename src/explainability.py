@@ -40,37 +40,36 @@ class VariantExplainabilityEngine:
     def perform_shap_clustering(self, X: pd.DataFrame) -> Dict[str, str]:
         """
         Automated SHAP-based clustering:
-        Clusters features into 5 functional biological groups based on their
+        Clusters features into 4 functional biological groups based on their
         mean absolute SHAP contribution profile across samples.
         Groups:
         1. Evolutionary Conservation (highest expected positive contribution)
         2. Population Allele Frequencies (monotonically negative correlation)
         3. In-silico Predictors (cumulative consistent impact)
         4. Biochemical/Structural Effects
-        5. Local Sequence Context
         """
         if self.shap_values is None or self.shap_values.values is None:
             # Fallback assignment if explainer failed or missing
             cols = list(X.columns)
-            groups = ["Conservation", "Population_Freq", "In_Silico", "Biochemical", "Local_Context"]
-            return {col: groups[i % 5] for i, col in enumerate(cols)}
+            groups = ["Conservation", "Population_Freq", "In_Silico", "Biochemical"]
+            return {col: groups[i % 4] for i, col in enumerate(cols)}
             
         # Extract mean absolute SHAP values per feature
         mean_abs_shap = np.abs(self.shap_values.values).mean(axis=0)
         
         # Reshape for 1D clustering of feature importances
-        clustering = AgglomerativeClustering(n_clusters=min(5, len(mean_abs_shap)))
+        clustering = AgglomerativeClustering(n_clusters=min(4, len(mean_abs_shap)))
         cluster_labels = clustering.fit_predict(mean_abs_shap.reshape(-1, 1))
         
         # Calculate cluster centroids to assign meaningful group names deterministically
         cluster_means = {}
-        for c in range(min(5, len(mean_abs_shap))):
+        for c in range(min(4, len(mean_abs_shap))):
             cluster_means[c] = mean_abs_shap[cluster_labels == c].mean()
             
         # Rank clusters by importance magnitude
         sorted_clusters = sorted(cluster_means.keys(), key=lambda x: cluster_means[x], reverse=True)
         
-        group_names = ["Conservation", "In_Silico", "Population_Freq", "Biochemical", "Local_Context"]
+        group_names = ["Conservation", "In_Silico", "Population_Freq", "Biochemical"]
         cluster_to_group = {sorted_clusters[i]: group_names[i] for i in range(len(sorted_clusters))}
         
         # Build assignment map
