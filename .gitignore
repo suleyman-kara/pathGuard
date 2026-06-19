@@ -3,6 +3,9 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
+.venv/
+.env
+.vscode/
 # User-specific files
 *.rsuser
 *.suo
@@ -427,3 +430,11 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# PathGuard Specific
+/outputs/
+/models/
+data/processed/
+.venv/
+__pycache__/
+*.joblib
