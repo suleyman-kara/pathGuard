@@ -1,23 +1,23 @@
-# PathGuard: Missense Genetik Varyant Sınıflandırma Sistemi
+# PathGuard
 
 Missense genetik varyantları **Patojenik / Benign** olarak sınıflandıran bir makine öğrenmesi pipeline'ı. Dört bağımsız model üretir: **Master (Genel)**, **KANSER**, **PAH**, **CFTR**. Her panel master modelinden tamamen bağımsız, yalnızca kendi verisiyle eğitilir.
 
 ## Kurulum (Windows / PowerShell)
 
-**Gereksinim:** Python 3.11+ (3.14'te test edildi). Sürümü kontrol: `py --version`.
+**Gereksinim:**
 
 ```powershell
 # 1) Repoyu klonla ve içine gir
 git clone https://github.com/MEN-INA/pathGuard.git
 cd pathGuard
 
-# 2) Sanal ortam (venv) oluştur — proje klasörü içinde "venv" adında
+# 2) Sanal ortam (venv) oluştur
 py -m venv venv
 
 # 3) venv'i aktive et (her yeni PowerShell oturumunda tekrar gerekir)
 .\venv\Scripts\Activate.ps1
 
-# 4) Bağımlılıkları kur (sabitlenmiş sürümler)
+# 4) Bağımlılıkları kur
 pip install -r requirements.txt
 ```
 
@@ -33,10 +33,10 @@ Aktivasyon başarılıysa satır başında `(venv)` görünür. `venv` klasörü
 ## Eğitim
 
 ```powershell
-# Hızlı smoke test (~20 sn)
+# Hızlı smoke test
 py scripts/train.py --trials 1 --cv-repeats 1 --skip-shap
 
-# Tam eğitim (~2-3 dk)
+# Tam eğitim
 py scripts/train.py --trials 30
 ```
 
