@@ -62,6 +62,11 @@ Yarışma sıralama metriği yalnızca F1'dir (TP/FP/FN üzerinden, patojenik s�
 2. **Recall ≥ 0.90 klinik eşik kısıtı kaldırıldı** (`CLINICAL_RECALL_TARGET = 0.0`). Eşik
    artık doğrudan Class 1 F1'i maksimize eder. Raporun bu iki konudaki özgünlük iddialarından
    (panel-aware meta-learning + klinik risk odaklı eşik) **vazgeçildi**.
+3. **Test prior'una göre eşik** (`TEST_PATHOGENIC_PRIOR = 0.20`). Eğitim ~%80 / test ~%20 ters
+   dağılımı nedeniyle eşik artık test prior'u altında F1'i (`Class1_F1_TestPrior`) maksimize
+   eder; `optimize_decision_threshold` + `calculate_metrics` güncellendi. Bu, raporun
+   Özgünlük #2'sini (asimetrik dağılıma özel kalibrasyon+eşik) tamamlar. Beklenen test F1:
+   Master 0.60, KANSER 0.65, PAH 0.50, CFTR 0.74.
 
 ## Komutlar
 
@@ -81,9 +86,12 @@ python scripts/predict.py data/raw/YARISMA_TRAIN_CFTR.csv --panel CFTR --submiss
 
 ## Bilinen takip konuları (kullanıcı "sonra konuşacağız" dedi — kendiliğinden yapma)
 
-- **Eğitim/test prior kayması:** Eşik, ~%80 patojenik eğitim/OOF dağılımında seçiliyor; test
-  ~%20 patojenik. Eşiğin test prior'una göre ayarlanması Class 1 F1'i iyileştirebilir.
+- ~~Eğitim/test prior kayması~~ → çözüldü (karar #3).
+- **Olasılık prior-kalibrasyonu:** olasılıkların da test prior'una göre kalibrasyonu (F1 için
+  gerekmez; kalibrasyon kalitesi için).
 - **Panel mimarisi:** Panellere kalibrasyon ve/veya LGBM+XGB ensemble eklenmesi.
+- **Raporun küçük uyumsuzlukları:** çok-seed CV, Optuna 50–100 deneme, soft-voting'e kalibre LR,
+  eksiklik bayrağı/aykırı değer/label smoothing.
 
 ## Çalışma tarzı notları
 

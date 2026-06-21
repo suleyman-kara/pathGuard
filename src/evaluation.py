@@ -20,44 +20,66 @@ from sklearn.metrics import (
     matthews_corrcoef,
     confusion_matrix
 )
-from src.config import OUTPUT_DIR
+from src.config import OUTPUT_DIR, TEST_PATHOGENIC_PRIOR
 
-def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_probs: np.ndarray) -> Dict[str, float]:
-    """Calculates the complete competition evaluation metric suite."""
+def calculate_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_probs: np.ndarray,
+    test_prior: Optional[float] = TEST_PATHOGENIC_PRIOR
+) -> Dict[str, float]:
+    """Calculates the complete competition evaluation metric suite.
+
+    The OOF metrics (Class1_F1, Specificity, ...) are measured on the training-distribution
+    OOF data (~80% pathogenic). Because the hidden test set is reversed (~20% pathogenic),
+    we additionally report prior-adjusted precision/F1 (Class1_F1_TestPrior) that estimate
+    the expected class 1 F1 under the test distribution. See docs/rapor_guncellemeleri.md.
+    """
     # Ensure safe zero divisions
     macro_f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
     class1_f1 = f1_score(y_true, y_pred, zero_division=0)
-    
+
     # Calculate PR-AUC safely
     precision, recall, _ = precision_recall_curve(y_true, y_probs)
     pr_auc = auc(recall, precision)
-    
+
     # Calculate ROC-AUC safely
     try:
         roc_auc = roc_auc_score(y_true, y_probs)
     except ValueError:
         roc_auc = 0.5  # Only one class present in small sample sets
-        
+
     sensitivity = recall_score(y_true, y_pred, zero_division=0)
-    
-    # Specificity calculation from confusion matrix
-    cm = confusion_matrix(y_true, y_pred)
-    if cm.shape == (2, 2):
-        tn, fp, fn, tp = cm.ravel()
-        specificity = tn / max(tn + fp, 1)
+
+    # Specificity and prior-invariant rates from a forced 2x2 confusion matrix
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    specificity = tn / max(tn + fp, 1)
+
+    # Prior-adjusted (expected test-distribution) precision & F1 for class 1.
+    # TPR (recall) and FPR are prior-invariant; re-derive precision at the test prior.
+    tpr = tp / max(tp + fn, 1)
+    fpr = fp / max(fp + tn, 1)
+    if test_prior is None:
+        precision_tp = tp / max(tp + fp, 1)
+        f1_tp = float(class1_f1)
     else:
-        specificity = 0.0
-        
+        denom = test_prior * tpr + (1.0 - test_prior) * fpr
+        precision_tp = (test_prior * tpr / denom) if denom > 0 else 0.0
+        f1_tp = (2 * precision_tp * tpr / (precision_tp + tpr)) if (precision_tp + tpr) > 0 else 0.0
+
     bal_acc = balanced_accuracy_score(y_true, y_pred)
     mcc = matthews_corrcoef(y_true, y_pred)
     try:
         brier = brier_score_loss(y_true, y_probs)
     except ValueError:
         brier = 0.0
-    
+
     return {
         "Macro_F1": float(macro_f1),
         "Class1_F1": float(class1_f1),
+        "Class1_F1_TestPrior": float(f1_tp),
+        "Precision_TestPrior": float(precision_tp),
+        "Test_Prior": float(test_prior) if test_prior is not None else None,
         "PR_AUC": float(pr_auc),
         "ROC_AUC": float(roc_auc),
         "Sensitivity": float(sensitivity),

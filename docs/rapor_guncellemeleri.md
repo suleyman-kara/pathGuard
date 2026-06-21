@@ -101,6 +101,47 @@ eğitimde seçilen kararın test dağılımına göre yanlı olabileceği anlam�
 
 ---
 
+## Değişiklik 4 — Test prior'una göre eşik seçimi (Özgünlük #2'nin tamamlanması)
+
+**Tarih:** 2026-06-21
+
+**Ne yapıldı?**
+- `src/config.py`: `TEST_PATHOGENIC_PRIOR = 0.20` eklendi (Q&A: test ~%20 patojenik).
+- `src/models/ensemble.py` (`optimize_decision_threshold`): Eşik artık eğitim/OOF dağılımında
+  değil, **test prior'u altında** hesaplanan Class 1 F1'i (F1_π) maksimize ediyor. Yeni yardımcı
+  `prior_adjusted_class1_f1`: recall (TPR) ve FPR prior'dan bağımsız olduğu için precision'ı
+  hedef prior π altında yeniden kurar: `precision_π = π·TPR / (π·TPR + (1−π)·FPR)`.
+- `src/evaluation.py` (`calculate_metrics`): Her rapora `Class1_F1_TestPrior` ve
+  `Precision_TestPrior` alanları eklendi — bunlar **görülmemiş test setinde beklenen** Class 1
+  F1'i öngörür. OOF (eğitim dağılımı) metrikleri referans olarak korunur.
+- `src/pipeline.py`: Master ensemble seçimi (soft-voting vs stacking) de `Class1_F1_TestPrior`
+  üzerinden yapılıyor; loglar hem OOF hem beklenen-test F1'ini gösteriyor.
+
+**Neden?**
+- Yarışma metriği test dağılımında (%20 patojenik) ölçülecek; oysa eşik eğitim dağılımında
+  (%80) seçiliyordu. Bu, test setinde precision'ı çökertiyordu (Q&A dağılım şartı + raporun
+  satır 98'de bizzat uyardığı "karar sınırının test dağılımına göre yanlı kalması").
+- Raporda **koruduğumuz** Özgünlük #2 ("Asimetrik dağılıma özel kalibrasyon + eşik pipeline'ı")
+  ancak bu adımla fiilen teslim edilmiş olur.
+
+**Etki (30 trial, ölçülen):** Eşik yükseldi (master 0.51 → 0.68); OOF F1 düştü ama **beklenen
+test F1 belirgin arttı**:
+
+| Model | OOF Class1 F1 | Beklenen Test F1 (önce ~) | Beklenen Test F1 (sonra) |
+| --- | ---: | ---: | ---: |
+| Master | 0.792 | ~0.50 | **0.595** |
+| KANSER | 0.789 | ~0.56 | **0.645** |
+| PAH | 0.788 | ~0.38 | **0.497** |
+| CFTR | 0.741 | ~0.54 | **0.741** |
+
+PAH en zayıf (ROC-AUC 0.76 → sınıf ayrımı düşük); CFTR en iyi (specificity 1.0). Bu, eşiğin
+gerçek değerlendirme dağılımına hizalanmasının doğrudan kazanımıdır.
+
+**Not:** Olasılıkların kendisinin prior'a göre yeniden kalibrasyonu (reliability diagram kalitesi
+için) opsiyonel bir sonraki adım olarak bırakılmıştır; F1 sıralaması için eşik düzeltmesi yeterli.
+
+---
+
 ## Korunan özgünlükler
 
 Aşağıdaki rapor özgünlükleri değişmeden korunmaktadır:
@@ -111,9 +152,13 @@ Aşağıdaki rapor özgünlükleri değişmeden korunmaktadır:
 
 ---
 
-## Bilinen takip konuları (bu turda YAPILMADI, sonra konuşulacak)
+## Bilinen takip konuları
 
-- **Eğitim/test prior kayması:** Eşik, eğitim/OOF dağılımında (~%80 patojenik) seçiliyor;
-  oysa test ~%20 patojenik. Eşiğin test prior'una göre ayarlanması Class 1 F1'i etkileyebilir.
+- ~~Eğitim/test prior kayması~~ → **Değişiklik 4 ile çözüldü** (test prior'una göre eşik).
+- **Olasılık prior-kalibrasyonu:** Eşiğe ek olarak olasılık çıktılarının da test prior'una göre
+  yeniden kalibrasyonu (reliability diagram / Brier kalitesi için). F1 için gerekli değil.
 - **Panel mimarisi iyileştirmeleri:** Panellere kalibrasyon ve/veya LGBM+XGB ensemble
   eklenmesi (şu an her panel tek, düzenlileştirilmiş LightGBM).
+- **PAH'ın zayıf ayrımı:** ROC-AUC 0.76 — özellik mühendisliği / panel-özel model gerekebilir.
+- **Raporun küçük uyumsuzlukları:** çok-seed CV, Optuna 50–100 deneme, soft-voting'e kalibre LR,
+  eksiklik bayrağı/aykırı değer/label smoothing (bkz. uyum denetimi tartışması).

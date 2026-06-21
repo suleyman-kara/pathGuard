@@ -224,7 +224,8 @@ class PathGuardTrainingPipeline:
                 "stacker": stacker,
             }
 
-        selected_name = max(candidates, key=lambda name: candidates[name]["metrics"]["Class1_F1"])
+        # Ensemble seçimi de test dağılımına göre yapılır (eğitim dağılımındaki F1 yanıltıcı)
+        selected_name = max(candidates, key=lambda name: candidates[name]["metrics"]["Class1_F1_TestPrior"])
         selected = candidates[selected_name]
         self.ensemble_type = selected_name
         self.best_threshold = float(selected["threshold"])
@@ -303,7 +304,8 @@ class PathGuardTrainingPipeline:
 
         print(
             f"Selected Master Ensemble: {self.ensemble_type} "
-            f"(threshold={self.best_threshold:.3f}, Class 1 F1={master_metrics['Class1_F1']:.4f})"
+            f"(threshold={self.best_threshold:.3f}, OOF Class 1 F1={master_metrics['Class1_F1']:.4f}, "
+            f"Expected Test Class 1 F1={master_metrics['Class1_F1_TestPrior']:.4f})"
         )
         save_metrics_report(master_metrics, file_name="master_metrics.json")
         plot_precision_recall_curve(y_clean.values, master_oof_probs, file_name="master_pr_curve.png")
@@ -420,6 +422,7 @@ class PathGuardTrainingPipeline:
 
             print(
                 f"Panel {p_name} OOF Class 1 F1: {metrics['Class1_F1']:.4f}, "
+                f"Expected Test Class 1 F1: {metrics['Class1_F1_TestPrior']:.4f}, "
                 f"Recall: {metrics['Sensitivity']:.4f}, Leakage-aware: {metrics['Leakage_Aware']}"
             )
             self._log_experiment(f"panel_{p_name}_training", metrics)

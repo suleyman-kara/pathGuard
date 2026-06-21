@@ -156,16 +156,18 @@ flowchart TD
 
 ## Son Eğitim Özeti
 
-`python scripts/train.py --trials 30` çalıştırması (Python 3.14, bağımsız panel mimarisi). Seçilen master ensemble: `soft_voting`.
+`python scripts/train.py --trials 30` çalıştırması (Python 3.14, bağımsız panel mimarisi, test prior'una göre eşik). Seçilen master ensemble: `logistic_stacking`.
 
-| Model | Class 1 F1 | PR-AUC | Sensitivity | Specificity |
-| --- | ---: | ---: | ---: | ---: |
-| Master OOF | 0.8916 | 0.9230 | — | — |
-| KANSER OOF | 0.9043 | — | 0.9623 | — |
-| PAH OOF | 0.9245 | — | 0.9967 | — |
-| CFTR OOF | 0.9290 | — | 0.9444 | — |
+Eğitim/OOF dağılımı ~%80 patojeniktir; final test seti ise ~%20 patojeniktir (Q&A). **Beklenen Test F1** (`Class1_F1_TestPrior`), recall/specificity'nin prior'dan bağımsızlığı kullanılarak test dağılımına taşınmış, değerlendirme için anlamlı olan skordur. OOF F1 yalnızca referanstır.
 
-Panel metrikleri bağımsız (sızıntısız) eğitimden elde edilmiştir; eski meta-learning değerlerinden (0.92–0.95) **beklenen şekilde düşüktür** — bu dürüst/gerçekçi OOF skorunu yansıtır. Ayrıntı için `docs/rapor_guncellemeleri.md`.
+| Model | OOF Class 1 F1 | **Beklenen Test F1** | Recall | Specificity | ROC-AUC |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Master | 0.7923 | **0.5951** | 0.6933 | 0.8408 | 0.8492 |
+| KANSER | 0.7887 | **0.6455** | 0.6830 | 0.8917 | 0.8858 |
+| PAH | 0.7880 | **0.4974** | 0.6840 | 0.7333 | 0.7636 |
+| CFTR | 0.7413 | **0.7413** | 0.5889 | 1.0000 | 0.8905 |
+
+Eşik, test prior'u (%20) altında Class 1 F1'i maksimize edecek şekilde seçilir; bu yüzden OOF F1 (eğitim dağılımı) düşük görünse de beklenen test F1 daha yüksektir. PAH en zor panel (düşük ROC-AUC); CFTR en iyi (specificity 1.0). Ayrıntı: `docs/rapor_guncellemeleri.md`.
 
 ## Notlar
 

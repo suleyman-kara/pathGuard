@@ -68,3 +68,11 @@ XGB_PARAM_SPACE = {
 # The previous 0.90 clinical-recall constraint (reported as an "originality") was
 # dropped because it capped class 1 F1; see docs/rapor_guncellemeleri.md.
 CLINICAL_RECALL_TARGET = 0.0
+
+# Expected pathogenic (class 1) prior of the HIDDEN test set. Per soru-cevap.md the
+# training set is ~80% pathogenic while the test set is reversed to ~20% pathogenic
+# / ~80% benign. Recall (TPR) and FPR estimated on the training-distribution OOF are
+# prior-invariant, so we re-derive precision/F1 at this test prior to (a) select the
+# decision threshold against the real evaluation distribution and (b) report an
+# honest "expected test" class 1 F1. See docs/rapor_guncellemeleri.md.
+TEST_PATHOGENIC_PRIOR = 0.20
