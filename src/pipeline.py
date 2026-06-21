@@ -49,7 +49,7 @@ from src.models.ensemble import (
     optimize_decision_threshold,
 )
 from src.models.lgbm_model import LightGBMVariantModel
-from src.models.panel_model import PanelMetaLearner
+from src.models.panel_model import PanelVariantModel
 from src.models.xgb_model import XGBoostVariantModel
 from src.preprocessing import VariantFeatureEncoder
 
@@ -84,7 +84,7 @@ class PathGuardTrainingPipeline:
         self.master_ensemble: Optional[Any] = None
         self.best_threshold = 0.5
         self.ensemble_type = "soft_voting"
-        self.panel_learners: Dict[str, PanelMetaLearner] = {}
+        self.panel_learners: Dict[str, PanelVariantModel] = {}
         self.panel_thresholds: Dict[str, float] = {}
         self.data_quality_report: Dict[str, Any] = {}
 
@@ -224,7 +224,8 @@ class PathGuardTrainingPipeline:
                 "stacker": stacker,
             }
 
-        selected_name = max(candidates, key=lambda name: candidates[name]["metrics"]["Class1_F1"])
+        # Ensemble seçimi de test dağılımına göre yapılır (eğitim dağılımındaki F1 yanıltıcı)
+        selected_name = max(candidates, key=lambda name: candidates[name]["metrics"]["Class1_F1_TestPrior"])
         selected = candidates[selected_name]
         self.ensemble_type = selected_name
         self.best_threshold = float(selected["threshold"])
@@ -303,7 +304,8 @@ class PathGuardTrainingPipeline:
 
         print(
             f"Selected Master Ensemble: {self.ensemble_type} "
-            f"(threshold={self.best_threshold:.3f}, Class 1 F1={master_metrics['Class1_F1']:.4f})"
+            f"(threshold={self.best_threshold:.3f}, OOF Class 1 F1={master_metrics['Class1_F1']:.4f}, "
+            f"Expected Test Class 1 F1={master_metrics['Class1_F1_TestPrior']:.4f})"
         )
         save_metrics_report(master_metrics, file_name="master_metrics.json")
         plot_precision_recall_curve(y_clean.values, master_oof_probs, file_name="master_pr_curve.png")
@@ -348,11 +350,13 @@ class PathGuardTrainingPipeline:
         return X_prep.values, y_clean.values
 
     def run_panel_pipelines(self) -> None:
-        assert self.master_ensemble is not None, "Master pipeline must run before panels."
+        # Paneller artık master MODELİNE bağımlı değildir; yalnızca master setinde fit edilmiş
+        # paylaşılan ön-işleme encoder'ına ihtiyaç duyarlar (etiket sızıntısı yok).
+        assert self.encoder.is_fitted, "Feature encoder must be fitted (run master pipeline) before panels."
 
         overlap_report = self.data_quality_report.get("master_panel_overlap", {})
         for p_name, p_path in self._panel_paths().items():
-            print(f"\n--- Running OOF Transfer Learning Pipeline for Panel: {p_name} ---")
+            print(f"\n--- Running Independent Panel Pipeline for Panel: {p_name} ---")
             if not os.path.exists(p_path):
                 print(f"Warning: Panel file {p_path} missing. Skipping.")
                 continue
@@ -368,7 +372,7 @@ class PathGuardTrainingPipeline:
 
             print(f"Calculating panel OOF predictions across {len(cv_splits)} folds/repeats...")
             for train_idx, val_idx in tqdm(cv_splits, desc=f"{p_name} OOF CV", unit="fold"):
-                learner = PanelMetaLearner(self.master_ensemble)
+                learner = PanelVariantModel()
                 learner.train(X_prep.iloc[train_idx], y_clean.iloc[train_idx])
                 prob_sums[val_idx] += learner.predict_proba(X_prep.iloc[val_idx])
                 prob_counts[val_idx] += 1
@@ -398,26 +402,27 @@ class PathGuardTrainingPipeline:
             plot_reliability_diagram(y_clean.values, oof_probs, file_name=f"panel_{p_name}_reliability.png")
             save_error_analysis(ids_clean, y_clean.values, preds, oof_probs, f"error_analysis_panel_{p_name}.csv")
 
-            final_learner = PanelMetaLearner(self.master_ensemble)
+            final_learner = PanelVariantModel()
             final_learner.train(X_prep, y_clean)
             self.panel_learners[p_name] = final_learner
             final_learner.save(str(MODEL_DIR / f"panel_{p_name}.joblib"))
             save_feature_importance(
                 final_learner.panel_model,
-                list(final_learner._augment_features(X_prep).columns),
+                list(X_prep.columns),
                 f"feature_importance_panel_{p_name}_gain.csv",
                 importance_type="gain",
             )
 
             if not self.skip_shap:
                 print(f"Running SHAP Explainability Engine for Panel {p_name}...")
-                engine = VariantExplainabilityEngine(final_learner.panel_model).fit(final_learner._augment_features(X_prep))
+                engine = VariantExplainabilityEngine(final_learner.panel_model).fit(X_prep)
                 engine.generate_summary_plot(file_name=f"panel_{p_name}_shap_summary.png")
                 for idx in np.where(preds != y_clean.values)[0][:5]:
                     engine.generate_waterfall_plot(sample_idx=int(idx), file_name=f"panel_{p_name}_shap_waterfall_{idx}.png")
 
             print(
                 f"Panel {p_name} OOF Class 1 F1: {metrics['Class1_F1']:.4f}, "
+                f"Expected Test Class 1 F1: {metrics['Class1_F1_TestPrior']:.4f}, "
                 f"Recall: {metrics['Sensitivity']:.4f}, Leakage-aware: {metrics['Leakage_Aware']}"
             )
             self._log_experiment(f"panel_{p_name}_training", metrics)

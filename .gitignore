@@ -435,6 +435,10 @@ FodyWeavers.xsd
 /outputs/
 /models/
 data/processed/
+# Python sanal ortamları (asla commit edilmez; her geliştirici kendi ortamını kurar)
+venv/
 .venv/
+env/
+ENV/
 __pycache__/
 *.joblib
