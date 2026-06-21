@@ -84,6 +84,10 @@ py scripts/train.py --trials 30
 py scripts/predict.py data/raw/YARISMA_TRAIN_CFTR.csv --panel CFTR --submission-only --output cftr.csv
 ```
 
+## Sonraki adımlar / yol haritası
+
+Önceliklendirilmiş ilerleme planı: **`docs/sonraki-adimlar.md`**. (İlk iş: `feat/independent-panels-and-recall-removal` branch'ini PR ile main'e merge etmek.)
+
 ## Bilinen takip konuları (kullanıcı "sonra konuşacağız" dedi — kendiliğinden yapma)
 
 - ~~Eğitim/test prior kayması~~ → çözüldü (karar #3).
