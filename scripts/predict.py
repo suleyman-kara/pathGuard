@@ -15,7 +15,7 @@ from src.data_loader import load_data
 from src.models.lgbm_model import LightGBMVariantModel
 from src.models.xgb_model import XGBoostVariantModel
 from src.models.ensemble import CalibratedVariantModel, LogisticStackingEnsemble, SoftVotingEnsemble
-from src.models.panel_model import PanelMetaLearner
+from src.models.panel_model import PanelVariantModel
 
 def load_master_ensemble() -> Tuple[object, dict]:
     """Loads the trained calibrated master ensemble and optimal threshold metadata."""
@@ -92,27 +92,35 @@ def main() -> None:
         sys.exit(1)
     
     print(f"Loading inference weights for context: {args.panel}...")
-    try:
-        master_ensemble, meta = load_master_ensemble()
-    except (FileNotFoundError, ValueError) as exc:
-        print(f"Error: {exc}")
-        sys.exit(1)
-    
-    start_inf = time.time()
     if args.panel == "MASTER":
+        try:
+            master_ensemble, meta = load_master_ensemble()
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"Error: {exc}")
+            sys.exit(1)
         best_threshold = meta.get("threshold", 0.5)
+        start_inf = time.time()
         probs = master_ensemble.predict_proba(X_prep)
     else:
+        # Bağımsız panel modeli: master ağırlıklarına ihtiyaç yoktur.
+        # Yalnızca panel modeli + ensemble_meta.joblib içindeki panel eşiği gerekir.
+        meta_path = MODEL_DIR / "ensemble_meta.joblib"
+        if not meta_path.exists():
+            print(f"Error: Missing metadata artifact {meta_path}. Run training first.")
+            sys.exit(1)
+        meta = joblib.load(meta_path)
+
         # Alt panele ait karar eşiğini yükle, yoksa genel eşiği kullan
         panel_thresholds = meta.get("panel_thresholds", {})
         best_threshold = panel_thresholds.get(args.panel, meta.get("threshold", 0.5))
-        
+
         panel_file = MODEL_DIR / f"panel_{args.panel}.joblib"
         if not panel_file.exists():
             print(f"Error: Specialized weights {panel_file} missing. Run training first.")
             sys.exit(1)
-            
-        learner = PanelMetaLearner(master_ensemble).load(str(panel_file))
+
+        learner = PanelVariantModel().load(str(panel_file))
+        start_inf = time.time()
         probs = learner.predict_proba(X_prep)
         
     preds = (probs >= best_threshold).astype(int)

@@ -76,20 +76,26 @@ class LogisticStackingEnsemble:
         return self.stacker.predict_proba(self._meta_features(X))[:, 1]
 
 def optimize_decision_threshold(
-    y_true: np.ndarray, 
-    probs: np.ndarray, 
+    y_true: np.ndarray,
+    probs: np.ndarray,
     recall_target: float = CLINICAL_RECALL_TARGET
 ) -> Tuple[float, float, float]:
     """
     Karar Eşiği Optimizasyonu:
     - Olasılık çıktıları (0.01 - 0.99) arasında tarama yapar.
-    - Klinik Duyarlılık (Recall/Sensitivity) >= hedef kısıtını sağlayan
-      ve en yüksek Patojenik Sınıf F1 Skorunu (Class 1 F1) veren eşiği seçer.
-      
+    - recall >= recall_target kısıtını sağlayan eşikler arasından en yüksek Patojenik
+      Sınıf F1 Skorunu (Class 1 F1) veren eşiği seçer.
+
+    Not: recall_target varsayılan olarak 0.0'dır (config.CLINICAL_RECALL_TARGET). Bu durumda
+    her eşik kısıtı sağlar; dolayısıyla fonksiyon doğrudan yarışma metriği olan Class 1 F1'i
+    maksimize eden eşiği döndürür. Önceki 0.90'lık klinik recall kısıtı kaldırılmıştır
+    (bkz. docs/rapor_guncellemeleri.md). recall_target > 0 verilirse klinik recall tabanı
+    yine uygulanabilir.
+
     Girdi:
         y_true: Gerçek etiketler (0/1)
         probs: Tahmin olasılıkları
-        recall_target: Klinik olarak tolere edilebilir minimum duyarlılık (varsayılan: 0.90)
+        recall_target: Sağlanması gereken minimum duyarlılık tabanı (varsayılan: 0.0 = kısıtsız)
     Çıktı:
         (optimal_esik, en_iyi_f1, saglanan_duyarlilik)
     """

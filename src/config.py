@@ -61,5 +61,10 @@ XGB_PARAM_SPACE = {
     "colsample_bytree": (0.6, 1.0)
 }
 
-# Clinical Risk Parameters
-CLINICAL_RECALL_TARGET = 0.90
+# Decision Threshold Parameters
+# Recall (sensitivity) constraint for threshold selection. Set to 0.0 so that
+# optimize_decision_threshold directly maximizes the pathogenic-class (class 1) F1
+# score — the sole competition ranking metric — without any clinical recall floor.
+# The previous 0.90 clinical-recall constraint (reported as an "originality") was
+# dropped because it capped class 1 F1; see docs/rapor_guncellemeleri.md.
+CLINICAL_RECALL_TARGET = 0.0
