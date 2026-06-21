@@ -1,104 +1,58 @@
 # PathGuard: Missense Genetik Varyant Sınıflandırma Sistemi
 
-PathGuard, missense genetik varyantların patojenik/benign sınıflandırması için geliştirilmiş bir makine öğrenmesi pipeline'ıdır. Sistem; veri kalite kontrolü, sızıntı farkındalığı, LightGBM/XGBoost ensemble, Logistic Regression stacking, olasılık kalibrasyonu, patojenik sınıf (Class 1) F1'ini maksimize eden eşik seçimi, master modelinden bağımsız panel modelleri ve SHAP açıklanabilirliği içerir. Her panel (KANSER, PAH, CFTR) master modelinden tamamen bağımsız, yalnızca kendi verisiyle eğitilen ayrı bir modeldir (bkz. `docs/rapor_guncellemeleri.md`).
+Missense genetik varyantları **Patojenik / Benign** olarak sınıflandıran bir makine öğrenmesi pipeline'ı. Dört bağımsız model üretir: **Master (Genel)**, **KANSER**, **PAH**, **CFTR**. Her panel master modelinden tamamen bağımsız, yalnızca kendi verisiyle eğitilir.
 
-## Proje Yapısı
+## Kurulum (Windows / PowerShell)
 
-- `src/`: Veri yükleme, ön işleme, model wrapper'ları, pipeline, değerlendirme ve açıklanabilirlik kodları.
-- `src/models/`: LightGBM, XGBoost, ensemble ve bağımsız panel modeli bileşenleri.
-- `scripts/`: Eğitim ve tahmin CLI araçları.
-- `data/raw/`: Yarışma eğitim CSV dosyaları.
-- `models/`: Eğitim sonrası üretilen model artifact'leri. Git'e alınmaz.
-- `outputs/`: Metrikler, veri kalite raporları, hata analizleri, feature importance, SHAP ve grafik çıktıları. Git'e alınmaz.
-- `docs/`: Yarışma şartnamesi ve proje raporu.
-
-## Kurulum
-
-**Windows (PowerShell):**
+**Gereksinim:** Python 3.11+ (3.14'te test edildi). Sürümü kontrol: `py --version`.
 
 ```powershell
+# 1) Repoyu klonla ve içine gir
+git clone https://github.com/MEN-INA/pathGuard.git
+cd pathGuard
+
+# 2) Sanal ortam (venv) oluştur — proje klasörü içinde "venv" adında
 py -m venv venv
+
+# 3) venv'i aktive et (her yeni PowerShell oturumunda tekrar gerekir)
 .\venv\Scripts\Activate.ps1
+
+# 4) Bağımlılıkları kur (sabitlenmiş sürümler)
 pip install -r requirements.txt
 ```
 
-**Linux / macOS:**
+Aktivasyon başarılıysa satır başında `(venv)` görünür. `venv` klasörü Git'e gönderilmez; herkes kendi bilgisayarında bu adımları çalıştırarak kendi ortamını kurar — bu yüzden arkadaşın da aynı `requirements.txt` ile birebir aynı sürümleri elde eder.
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+### Sorun Giderme
 
-**Conda:**
-
-```bash
-conda env create -f environment.yml
-conda activate pathguard
-```
-
-macOS kullanıyorsanız LightGBM için `libomp` gerekebilir:
-
-```bash
-brew install libomp
-```
+- **`source: command not found` / `venv/bin/activate` çalışmıyor:** Bunlar Linux/macOS komutudur. Windows PowerShell'de aktivasyon: `.\venv\Scripts\Activate.ps1`.
+- **`python` tanınmıyor ama `py` çalışıyor:** Windows'ta normaldir; Python launcher'ı `py`'dir. Bu repodaki tüm komutlar `py` kullanır. (venv aktifken `py` otomatik olarak venv'i kullanır.)
+- **`Activate.ps1 ... çalıştırılamıyor (execution policy)`:** Bir kez şunu çalıştır: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` ve tekrar dene.
+- **Alternatif (her zaman çalışır):** Aktivasyonla uğraşmadan venv python'unu doğrudan çağır: `.\venv\Scripts\python.exe scripts/train.py --trials 1 --cv-repeats 1 --skip-shap`
 
 ## Eğitim
 
-Tam eğitim:
+```powershell
+# Hızlı smoke test (~20 sn)
+py scripts/train.py --trials 1 --cv-repeats 1 --skip-shap
 
-```bash
-python scripts/train.py --trials 30
+# Tam eğitim (~2-3 dk)
+py scripts/train.py --trials 30
 ```
-
-Hızlı smoke test:
-
-```bash
-python scripts/train.py --trials 1 --cv-repeats 1 --skip-shap
-```
-
-CLI seçenekleri:
-
-- `--trials`: Master LightGBM için Optuna deneme sayısı.
-- `--cv-repeats`: Küçük panel OOF validasyonu için repeated stratified CV tekrar sayısı. Varsayılan `10`.
-- `--calibration-mode`: `oof` veya `holdout`. Varsayılan `oof`.
-- `--enable-stacking` / `--no-enable-stacking`: Logistic Regression stacking katmanını açar/kapatır. Varsayılan açık.
-- `--skip-shap`: SHAP üretimini atlar, hızlı doğrulama için kullanılır.
 
 ## Tahmin
 
-Master model ile:
+```powershell
+# Master (Genel) model
+py scripts/predict.py data/raw/TEST_FILE.csv --panel MASTER --submission-only --output submission.csv
 
-```bash
-python scripts/predict.py data/raw/TEST_FILE.csv --panel MASTER --output submission.csv
+# Panel modeli (KANSER | PAH | CFTR) — master ağırlığı gerektirmez
+py scripts/predict.py data/raw/CFTR_TEST.csv --panel CFTR --submission-only --output cftr.csv
 ```
 
-Panel modeli ile:
+Girdi CSV'si eğitimdeki feature şemasıyla uyumlu olmalıdır; eksik/fazla kolonda script açık hata verir.
 
-```bash
-python scripts/predict.py data/raw/CFTR_TEST.csv --panel CFTR --output cftr_submission.csv
-```
-
-Girdi CSV'si eğitimde öğrenilen feature şemasıyla uyumlu olmalıdır. Eksik veya fazla kolon varsa tahmin script'i açık hata mesajı verir.
-
-## Üretilen Çıktılar
-
-Eğitim sonunda başlıca çıktılar şunlardır:
-
-- `outputs/data_quality_report.json`: Satır sayıları, sınıf dağılımları, missing oranları, duplicate/çelişkili duplicate bilgisi ve master-panel örtüşmeleri.
-- `outputs/experiment_log.jsonl`: Eğitim olayları, Optuna sonucu ve metrik kayıtları.
-- `outputs/master_metrics.json`: Master OOF metrikleri.
-- `outputs/panel_*_metrics.json`: Panel OOF metrikleri.
-- `outputs/master_ensemble_comparison.json`: Soft voting ve logistic stacking karşılaştırması.
-- `outputs/error_analysis_*.csv`: FP/FN örnekleri.
-- `outputs/feature_importance_*.csv`: Gain ve permutation importance raporları.
-- `outputs/*_pr_curve.png`, `outputs/*_reliability.png`: PR ve kalibrasyon grafikleri.
-- `outputs/*_shap_summary.png`, `outputs/*_shap_waterfall_*.png`: Açıklanabilirlik grafikleri.
-- `models/*.joblib`: Encoder, base modeller, kalibratörler, seçilen ensemble meta bilgisi ve panel modelleri.
-
-## Sistem Akışı ve Mimarisi
-
-Sistemin uçtan uca veri akışı ve mimarisi aşağıdaki gibidir:
+## Mimari
 
 ```mermaid
 flowchart TD
@@ -113,52 +67,39 @@ flowchart TD
 
     subgraph Preprocessing ["2. Ön İşleme & Ölçekleme"]
         F --> G(VariantFeatureEncoder)
-        G --> H[Kategorik Özellik Kodlama & Frekans Özellikleri]
-        G --> I[Sonsuz Değer Temizliği]
+        G --> H[Kategorik Encoding & Frekans Özellikleri]
         G --> J[Eksiklik >%60: Kolon Düşürme]
         G --> K[Eksiklik %30-%60: IterativeImputer]
         G --> L[Eksiklik <%30: Medyan Imputer]
         G --> M[RobustScaler Ölçekleme]
-        H & I & J & K & L & M --> N[Ön İşlemeden Geçmiş Veri]
+        H & J & K & L & M --> N[Ön İşlemeden Geçmiş Veri]
     end
 
     subgraph Master_Pipeline ["3. Genel (Master) Model Süreci"]
         N --> O(Optuna Bayesian Optimizasyon)
-        O --> P[En İyi LightGBM Hiperparametreleri]
-        N --> Q(5-Fold Stratified Cross-Validation)
+        N --> Q(5-Fold Stratified CV)
         Q --> R[LightGBM & XGBoost OOF Tahminleri]
-        R --> S(Isotonic Regression Olasılık Kalibrasyonu)
+        R --> S(Isotonic Olasılık Kalibrasyonu)
         S --> T{Ensemble Seçimi}
-        T -- En Yüksek Class 1 F1 --> U[Soft Voting / Stacking Ensemble]
-        P & U --> V[Eğitilmiş Master Modelleri & Kalibratörler]
+        O & T --> V[Eğitilmiş Master Modelleri & Kalibratörler]
     end
 
     subgraph Panel_Pipeline ["4. Bağımsız Panel Modelleri"]
         N --> X[Panel Verisiyle Bağımsız LightGBM Eğitimi]
         X --> Y(Repeated Stratified 5-Fold CV)
-        Y --> Z[OOF Tahminleri Üretimi]
-        Z --> AA(Eşik Optimizasyonu)
-        AA --> BB[En İyi Class 1 F1 Eşiği]
-        BB --> CC[Eğitilmiş Panel Modelleri & Panel Eşikleri]
+        Y --> Z[OOF Tahminleri]
+        Z --> AA(Test Prior'una Göre Eşik Optimizasyonu)
+        AA --> CC[Eğitilmiş Panel Modelleri & Panel Eşikleri]
     end
+
+    V --> AA
 ```
 
-### Detaylı Adımlar
+## Sonuçlar
 
-1. **Veri kalite kontrolü:** Eğitim setleri yüklenir; boş veri, eksik hedef, tek sınıf, duplicate ve çelişkili duplicate kontrolleri yapılır.
-2. **Sızıntı farkındalığı:** Panel `Variant_ID` değerlerinin master set ile örtüşmesi raporlanır. Örtüşme varsa panel metrikleri `Leakage_Aware=true` olarak işaretlenir.
-3. **Ön işleme:** Kategorik kolonlar missing/rare/unseen güvenli encoding ve frequency encoding'den geçer. Sürekli sayısal özellikler için eksiklik oranına göre imputasyon (%30 altı medyan, %30-%60 arası IterativeImputer, %60 üstü kolon düşürme) ve tüm sürekli özellikler için RobustScaler ölçekleme uygulanır.
-4. **Master model:** LightGBM için Optuna ile PR-AUC optimizasyonu yapılır. LightGBM ve XGBoost OOF tahminleri kalibre edilir.
-5. **Ensemble seçimi:** Soft voting ve Logistic Regression stacking OOF metrikleriyle karşılaştırılır; patojenik sınıf F1 skoru (Class 1 F1) yüksek olan seçilir.
-6. **Eşik seçimi:** Karar eşiği, OOF tahminleri üzerinde patojenik sınıf F1 (Class 1 F1) maksimize edilerek seçilir; klinik recall kısıtı uygulanmaz (`CLINICAL_RECALL_TARGET = 0.0`).
-7. **Panel modelleri:** KANSER, PAH ve CFTR panelleri master modelinden **bağımsız** olarak, yalnızca kendi panel verileriyle ayrı LightGBM modelleri biçiminde eğitilir (master soft prediction meta-feature kullanılmaz). Panel metrikleri final train-set üzerinden değil, repeated stratified OOF tahminlerden hesaplanır.
-8. **Analiz çıktıları:** Metrikler, hata analizi, feature importance, reliability diagram ve SHAP grafikleri üretilir.
+`py scripts/train.py --trials 30` çalıştırması.
 
-## Son Eğitim Özeti
-
-`python scripts/train.py --trials 30` çalıştırması (Python 3.14, bağımsız panel mimarisi, test prior'una göre eşik). Seçilen master ensemble: `logistic_stacking`.
-
-Eğitim/OOF dağılımı ~%80 patojeniktir; final test seti ise ~%20 patojeniktir (Q&A). **Beklenen Test F1** (`Class1_F1_TestPrior`), recall/specificity'nin prior'dan bağımsızlığı kullanılarak test dağılımına taşınmış, değerlendirme için anlamlı olan skordur. OOF F1 yalnızca referanstır.
+> **"Beklenen Test F1" nedir?** İki sütun da **aynı metriği** — patojenik sınıfın (class 1) F1'ini — gösterir; tek fark hangi sınıf dağılımında ölçüldüğüdür. Eğitim/OOF dağılımı ~%80 patojenik, **final test seti ise ~%20 patojeniktir** (Q&A). Yarışma skoru test setinde ölçüleceği için gerçek sıralama metriği **Beklenen Test F1** sütunudur. Recall ve specificity sınıf oranından bağımsız olduğundan bunları sabit tutup precision'ı test prior'unda (%20) yeniden hesaplarız. OOF F1 yalnızca referanstır (yanlış dağılımda olduğu için yüksek görünür).
 
 | Model | OOF Class 1 F1 | **Beklenen Test F1** | Recall | Specificity | ROC-AUC |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -167,14 +108,13 @@ Eğitim/OOF dağılımı ~%80 patojeniktir; final test seti ise ~%20 patojenikti
 | PAH | 0.7880 | **0.4974** | 0.6840 | 0.7333 | 0.7636 |
 | CFTR | 0.7413 | **0.7413** | 0.5889 | 1.0000 | 0.8905 |
 
-Eşik, test prior'u (%20) altında Class 1 F1'i maksimize edecek şekilde seçilir; bu yüzden OOF F1 (eğitim dağılımı) düşük görünse de beklenen test F1 daha yüksektir. PAH en zor panel (düşük ROC-AUC); CFTR en iyi (specificity 1.0). Ayrıntı: `docs/rapor_guncellemeleri.md`.
+Eşik, test prior'u (%20) altında class 1 F1'i maksimize edecek şekilde seçilir. PAH en zor panel (düşük ROC-AUC); CFTR en iyi (yanlış-pozitif yok → specificity 1.0, bu yüzden iki F1 eşit). Ayrıntı: `docs/rapor_guncellemeleri.md`.
 
 ## Notlar
 
-- Modeller ve çıktılar bilinçli olarak Git dışında tutulur.
-- Dış veri kaynaklarından etiket sorgulama yapılmaz; yarışma kısıtına uygun biçimde yalnız verilen varyant profilleri kullanılır.
-- Eşik seçimi yalnızca patojenik sınıf F1'ini (yarışma metriği) maksimize eder; klinik recall kısıtı uygulanmaz.
-- Paneller master modelinden bağımsızdır; bu sayede master-panel örtüşmesinden kaynaklanan yanıltıcı (sızıntılı) OOF F1 ortadan kalkar ve raporlanan panel skorları görülmemiş test verisini daha dürüst yansıtır.
+- `models/` ve `outputs/` Git dışındadır (eğitimle üretilir).
+- Dış veri kaynağından etiket sorgulanmaz; yalnızca verilen varyant profilleri kullanılır.
+- Paneller master'dan bağımsızdır → master-panel örtüşmesinden kaynaklı yanıltıcı (sızıntılı) OOF F1 ortadan kalkar.
 
 ---
 

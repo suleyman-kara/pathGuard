@@ -75,13 +75,13 @@ Yarışma sıralama metriği yalnızca F1'dir (TP/FP/FN üzerinden, patojenik s�
 py -m venv venv; .\venv\Scripts\Activate.ps1; pip install -r requirements.txt
 
 # Hızlı smoke test
-python scripts/train.py --trials 1 --cv-repeats 1 --skip-shap
+py scripts/train.py --trials 1 --cv-repeats 1 --skip-shap
 
 # Tam eğitim (~2–3 dk)
-python scripts/train.py --trials 30
+py scripts/train.py --trials 30
 
 # Tahmin — panel tahmini master ağırlığı gerektirmez
-python scripts/predict.py data/raw/YARISMA_TRAIN_CFTR.csv --panel CFTR --submission-only --output cftr.csv
+py scripts/predict.py data/raw/YARISMA_TRAIN_CFTR.csv --panel CFTR --submission-only --output cftr.csv
 ```
 
 ## Bilinen takip konuları (kullanıcı "sonra konuşacağız" dedi — kendiliğinden yapma)
