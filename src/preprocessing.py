@@ -90,7 +90,14 @@ class VariantFeatureEncoder:
             X_cont[self.low_missing_cols] = self.median_imputer.transform(X_cont[self.low_missing_cols])
 
         if self.mid_missing_cols:
-            self.iterative_imputer = IterativeImputer(max_iter=5, random_state=42)
+            # Hatalı n_jobs kaldırıldı, takılmayı önleyen güvenli ayarlar korundu
+            self.iterative_imputer = IterativeImputer(
+                max_iter=20,                 
+                tol=1e-2,                 
+                n_nearest_features=10,    
+                imputation_order='ascending',
+                random_state=42
+            )
             self.iterative_imputer.fit(X_cont)
             X_cont_imputed = self.iterative_imputer.transform(X_cont)
             X_cont = pd.DataFrame(X_cont_imputed, columns=self.kept_continuous_cols, index=X.index)
