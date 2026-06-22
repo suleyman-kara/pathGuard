@@ -31,6 +31,9 @@ class VariantFeatureEncoder:
         self.low_missing_cols: List[str] = []
         self.mid_missing_cols: List[str] = []
         self.kept_continuous_cols: List[str] = []
+        # Eksiklik bayrağı için: yüksek-eksiklikli kolonlar ve tüm sürekli kolon listesi
+        self.missing_flag_cols: List[str] = []
+        self.all_continuous_cols_: List[str] = []
         self.median_imputer: Optional[SimpleImputer] = None
         self.iterative_imputer: Optional[IterativeImputer] = None
         self.scaler: Optional[RobustScaler] = None
@@ -79,6 +82,15 @@ class VariantFeatureEncoder:
             else:
                 self.low_missing_cols.append(col)
                 self.kept_continuous_cols.append(col)
+
+        # 2b. Eksiklik bayrağı özellikleri için kolonları belirle.
+        # Rapor: "eksikliğin kendisi bilgilendiricidir". Yalnızca yüksek-eksiklikli (>=%30)
+        # kolonlara ikili "eksik mi?" bayrağı ekleriz; düşük-eksiklikli kolonların bayrağı
+        # neredeyse sabit (gürültü) olacağı için dışarıda bırakılır. Düşürülen (>%60) kolonların
+        # değerleri atılsa da eksiklik sinyali korunur. all_continuous_cols_ satır-düzeyi
+        # eksiklik yoğunluğu (missing_concentration) için kullanılır.
+        self.missing_flag_cols = list(self.mid_missing_cols) + list(self.dropped_cols)
+        self.all_continuous_cols_ = list(continuous_cols)
 
         # 3. Sürekli özellikler için imputasyon nesnelerini eğit
         X_cont = X[self.kept_continuous_cols].copy()
@@ -132,6 +144,19 @@ class VariantFeatureEncoder:
         if len(numeric_cols) > 0:
             out_df[numeric_cols] = out_df[numeric_cols].replace([np.inf, -np.inf], np.nan)
 
+        # Eksiklik bayrağı özellikleri: imputasyon ÖNCESİ NaN maskesinden üretilir.
+        # (out_df'in sürekli kolonları aşağıda impute edilince üzerine yazılır; bu yüzden
+        #  maskeyi burada yakalayıp en sona ekliyoruz.)
+        missing_flag_features: Dict[str, pd.Series] = {}
+        for col in self.missing_flag_cols:
+            if col in out_df.columns:
+                missing_flag_features[f"{col}_is_missing"] = out_df[col].isna().astype(int)
+        present_cont = [c for c in self.all_continuous_cols_ if c in out_df.columns]
+        if present_cont:
+            missing_flag_features["missing_concentration"] = (
+                out_df[present_cont].isna().mean(axis=1).astype(float)
+            )
+
         freq_features: Dict[str, pd.Series] = {}
         
         for col in self.cat_cols:
@@ -154,6 +179,10 @@ class VariantFeatureEncoder:
         # Frekans kolonlarını ekle
         if freq_features:
             out_df = pd.concat([out_df, pd.DataFrame(freq_features, index=out_df.index)], axis=1)
+
+        # Eksiklik bayrağı kolonlarını ekle (imputasyondan önce yakalanan maskeden)
+        if missing_flag_features:
+            out_df = pd.concat([out_df, pd.DataFrame(missing_flag_features, index=out_df.index)], axis=1)
 
         # 3. Sürekli özellikleri doldur ve ölçekle
         if self.kept_continuous_cols:

@@ -49,7 +49,9 @@ def load_master_ensemble() -> Tuple[object, dict]:
             raise FileNotFoundError(f"Missing stacking artifact: {stacker_path}")
         ensemble = LogisticStackingEnsemble([cal_lgbm, cal_xgb], stacker=joblib.load(stacker_path))
     else:
-        ensemble = SoftVotingEnsemble([cal_lgbm, cal_xgb], weights=[0.6, 0.4])
+        # Eğitimde OOF üzerinde optimize edilen ağırlıkları kullan (yoksa eski 0.6/0.4'e düş)
+        weights = meta.get("soft_voting_weights", [0.6, 0.4])
+        ensemble = SoftVotingEnsemble([cal_lgbm, cal_xgb], weights=list(weights))
     return ensemble, meta
 
 def main() -> None:

@@ -142,6 +142,95 @@ için) opsiyonel bir sonraki adım olarak bırakılmıştır; F1 sıralaması i�
 
 ---
 
+## Değişiklik 5 — Eksiklik bayrağı (missing indicator) özellikleri
+
+**Tarih:** 2026-06-22
+
+**Ne yapıldı?**
+- `src/preprocessing.py` (`VariantFeatureEncoder`): İmputasyon **öncesi** NaN maskesinden
+  yüksek-eksiklikli (≥%30, yani `mid_missing_cols + dropped_cols`) sürekli kolonlar için
+  `{col}_is_missing` ikili bayrak özellikleri ve satır-düzeyi `missing_concentration` özelliği
+  eklendi. Düşük-eksiklikli kolonlara bayrak eklenmez (neredeyse sabit → gürültü). Düşürülen
+  (>%60) kolonların değerleri atılsa da **eksiklik sinyali korunur**.
+
+**Neden?** Rapor (özellik mühendisliği) "eksikliğin kendisi bilgilendiricidir; ikili eksiklik
+bayrağı eklenir" diyor — kod bunu içermiyordu. Eksiklik bayrağı sıralamayı (ranking) değiştirir
+ve AUC/F1'i artırabilir; aynı zamanda rapor-kod boşluğunu kapatır.
+
+**Etki (izole, 30 trial):** Master +0.85pp, KANSER +2.5pp, PAH +0.4pp, CFTR −1.67pp;
+**ortalama beklenen test F1 +0.52pp**. CFTR'deki düşüş gerçek bir ayrım kaybı DEĞİLDİR
+(PR-AUC 0.97, specificity 1.0 → precision sabit; F1 recall-bağımlı ve 111 örnekte 99-noktalı
+eşik ızgarasının granülaritesinden kaynaklı). Net pozitif olduğu için global tutuldu.
+
+---
+
+## Değişiklik 6 — Master XGBoost Optuna ayarı + soft-voting ağırlık optimizasyonu
+
+**Tarih:** 2026-06-22
+
+**Ne yapıldı?**
+- `src/pipeline.py`: XGBoost önceden **default** parametrelerle eğitiliyordu (`XGB_PARAM_SPACE`
+  config'de tanımlı ama kullanılmıyordu). `_optimize_xgb_hyperparams` eklendi; XGB artık Optuna
+  ile ayarlanıyor (LGBM'in yarısı kadar trial — tam trial master'a ~0.1pp katarken süreyi ~3 dk
+  artırıyordu; 10 dk bütçesi için sınırlandı).
+- `_select_master_ensemble`: Sabit `0.6/0.4` soft-voting ağırlıkları yerine OOF üzerinde
+  test-prior F1'i maksimize eden ağırlık grid araması (11 nokta). Seçilen ağırlık
+  `ensemble_meta.joblib`'e yazılıyor; `scripts/predict.py` artık ağırlığı meta'dan okuyor
+  (eğitim/inference tutarlılığı).
+
+**Neden?** Rapor LGBM+XGB+(LR) ağırlıklı soft-voting iddia ediyor; XGB ayarsız ve ağırlık sabitti.
+Ayarlı XGB + optimize ağırlık ensemble çeşitliliğini/ranking'i iyileştirir.
+
+**Etki:** Master'a marjinal (+0.1–0.2pp; Optuna stokastikliği nedeniyle koşular arası ~0.2pp
+oynar). Stacking sıkça seçildiğinden ağırlık-opt bazı koşularda master'ı etkilemez (soft-voting
+adayı seçilmezse). Düşük getiri/maliyet — bu yüzden XGB trial'ı sınırlandı.
+
+---
+
+## Değişiklik 7 — Panellere ham (kalibrasyonsuz) soft-voting ensemble + panel-başına geçiş
+
+**Tarih:** 2026-06-22
+
+**Ne yapıldı?**
+- `src/models/panel_model.py`: `PanelVariantModel` artık `use_ensemble` modunu destekliyor:
+  LGBM + (sıkı düzenlileştirilmiş) XGBoost, **ham 0.5/0.5 ağırlıklı ortalama** (soft-voting).
+  Artefakt formatı `panel_v2` (her şey tek dosyada kapsüllü; geriye dönük uyumlu `load`).
+  `scripts/predict.py` değişmeden çalışır.
+- `src/pipeline.py` (`run_panel_pipelines`): OOF döngüsünde hem LGBM hem XGB eğitilir; **panel-başına
+  geçiş (gate)** ensemble'ı yalnızca OOF test-prior F1 tek-LGBM'i geçerse kullanır.
+
+**Neden kalibrasyon YOK (önemli düzeltme):** İlk uygulama panel olasılıklarını izotonik kalibre
+edip ortalıyordu. Ancak OOF üzerinde fit edilen kalibratörü full-data modelin olasılıklarına
+uygulamak, OOF'ta seçilen eşiğin **inference'a transfer olmamasına** yol açtı: CFTR'de inference
+olasılıkları (maks 0.75) eşiğin (0.82) altında kalıp **tüm tahminleri 0** yaptı. Ham ortalama
+tek-model gibi sorunsuz transfer eder ve çeşitlilik kazancını (ensemble'ın asıl faydası) korur.
+İlke web kanıtıyla uyumlu: izotonik kalibrasyon monotoniktir → eşik sonradan optimize edildiğinde
+F1'i değiştirmez; kalibrasyonun tek rolü ortalama öncesi ölçek hizalamadır ve burada zararı
+faydasından büyüktü.
+
+**Etki (gate kararları, 30 trial / cv-repeats 10):**
+- KANSER → ENSEMBLE: 0.6655 → **0.7138** (+4.83pp; ROC-AUC 0.887→0.916)
+- PAH → ENSEMBLE: 0.5236 → **0.5601** (+3.65pp)
+- CFTR → SINGLE-LGBM (gate ensemble'ı reddetti; ham ensemble küçük recall-bağımlı panelde fayda
+  etmedi): 0.7671 (Değişiklik 5 kaynaklı, baseline 0.7838'in −1.67pp altında)
+
+---
+
+## Toplam etki (baseline → güncel, beklenen test class 1 F1)
+
+| Model | Baseline | Güncel | Δ | Final model tipi |
+| --- | ---: | ---: | ---: | --- |
+| Master | 0.5896 | 0.5939 | +0.43pp | kalibre LGBM+XGB soft-voting |
+| KANSER | 0.6655 | **0.7138** | +4.83pp | LGBM+XGB ham ensemble |
+| PAH | 0.5236 | **0.5601** | +3.65pp | LGBM+XGB ham ensemble |
+| CFTR | 0.7838 | 0.7671 | −1.67pp | tek LGBM (gate kararı) |
+| **Ortalama** | **0.6406** | **0.6587** | **+1.81pp** | |
+
+Çalışma süresi ~6.6 dk (10 dk bütçesi içinde). Tüm 4 modelin inference dağılımı sağlıklı (CFTR
+all-zero hatası düzeltildi). Bu, **dürüst ve dağıtılabilir** bir iyileşmedir.
+
+---
+
 ## Korunan özgünlükler
 
 Aşağıdaki rapor özgünlükleri değişmeden korunmaktadır:
@@ -155,10 +244,21 @@ Aşağıdaki rapor özgünlükleri değişmeden korunmaktadır:
 ## Bilinen takip konuları
 
 - ~~Eğitim/test prior kayması~~ → **Değişiklik 4 ile çözüldü** (test prior'una göre eşik).
+- ~~Panel mimarisi (ensemble)~~ → **Değişiklik 7 ile çözüldü** (ham soft-voting + panel-başına geçiş).
+- ~~Eksiklik bayrağı / XGB ayarı~~ → **Değişiklik 5 & 6 ile eklendi.**
+- **KAVRAMSAL DÜZELTME — "panellere kalibrasyon":** Önceki yol haritası "panellere kalibrasyon →
+  ranking iyileşir" diyordu; bu **F1 için yanlıştır.** İzotonik kalibrasyon monotoniktir; eşik
+  zaten taranarak optimize edildiğinden örnek sıralamasını (ve dolayısıyla AUC/F1'i) değiştirmez.
+  Kalibrasyonun tek faydası iki modeli ortalamadan önce ölçek hizalamaktır; ancak full-data modele
+  OOF-fit kalibratör uygulamak inference eşiğini bozuyordu (CFTR all-zero). Bu yüzden paneller
+  **ham (kalibrasyonsuz) soft-voting** kullanır. (Master kalibrasyonu korunur — büyük veride
+  inference transferi sağlıklı.)
 - **Olasılık prior-kalibrasyonu:** Eşiğe ek olarak olasılık çıktılarının da test prior'una göre
   yeniden kalibrasyonu (reliability diagram / Brier kalitesi için). F1 için gerekli değil.
-- **Panel mimarisi iyileştirmeleri:** Panellere kalibrasyon ve/veya LGBM+XGB ensemble
-  eklenmesi (şu an her panel tek, düzenlileştirilmiş LightGBM).
-- **PAH'ın zayıf ayrımı:** ROC-AUC 0.76 — özellik mühendisliği / panel-özel model gerekebilir.
-- **Raporun küçük uyumsuzlukları:** çok-seed CV, Optuna 50–100 deneme, soft-voting'e kalibre LR,
-  eksiklik bayrağı/aykırı değer/label smoothing (bkz. uyum denetimi tartışması).
+- **PAH'ın zayıf ayrımı:** Ensemble ile +3.65pp iyileşti (ROC-AUC ~0.80). Daha ileri panel-özel
+  hiperparametre tuning'i (paneller şu an sabit param) opsiyonel — küçük sette overfit riski.
+- **CFTR'nin missing-flag hassasiyeti:** Eksiklik bayrakları CFTR'de recall granülaritesi nedeniyle
+  ~−1.7pp; panel-bazlı özellik dışlama ile geri kazanılabilir (belirsiz, +0.4pp; ranking sağlam
+  olduğundan ertelendi).
+- **Raporun küçük uyumsuzlukları (açık):** çok-seed CV, Optuna 50–100 deneme (bütçe nedeniyle 30 +
+  XGB 15), soft-voting'e kalibre LR, aykırı değer/label smoothing.

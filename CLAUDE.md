@@ -42,8 +42,10 @@ Yarışma sıralama metriği yalnızca F1'dir (TP/FP/FN üzerinden, patojenik s�
 - `src/pipeline.py` — uçtan uca pipeline: `run_master_pipeline()` (Genel model: kalibre
   LGBM+XGB soft-voting/stacking ensemble) ve `run_panel_pipelines()` (her panel bağımsız).
 - `src/config.py` — yollar, sabitler, arama uzayları, `CLINICAL_RECALL_TARGET`.
-- `src/models/panel_model.py` — `PanelVariantModel`: master'dan **bağımsız**, tek
-  düzenlileştirilmiş LightGBM.
+- `src/models/panel_model.py` — `PanelVariantModel`: master'dan **bağımsız**. Varsayılan tek
+  düzenlileştirilmiş LightGBM; `use_ensemble=True` ise LGBM+XGB **ham (kalibrasyonsuz)** soft-voting.
+  Artefakt formatı `panel_v2` (geriye dönük uyumlu load). Ensemble yalnızca panel-başına geçiş
+  (gate) OOF test-prior F1'i tek-LGBM'i geçerse kullanılır.
 - `src/models/ensemble.py` — kalibrasyon, soft-voting, stacking, `optimize_decision_threshold`.
 - `src/models/lgbm_model.py`, `xgb_model.py`, `base_model.py` — model wrapper'ları.
 - `src/preprocessing.py` — `VariantFeatureEncoder` (kategorik encoding, imputasyon, RobustScaler).
@@ -68,6 +70,25 @@ Yarışma sıralama metriği yalnızca F1'dir (TP/FP/FN üzerinden, patojenik s�
    Özgünlük #2'sini (asimetrik dağılıma özel kalibrasyon+eşik) tamamlar. Beklenen test F1:
    Master 0.60, KANSER 0.65, PAH 0.50, CFTR 0.74.
 
+## Bu turda yapılan kararlar (2026-06-22 — F1 maksimizasyon turu)
+
+Detay: `docs/rapor_guncellemeleri.md` Değişiklik 5–7. **Ortalama beklenen test F1: 0.641 → 0.659
+(+1.81pp), ~6.6 dk.** Doğrulama metriği **`Class1_F1_TestPrior`** (OOF F1 değil).
+
+1. **Eksiklik bayrağı özellikleri** (`preprocessing.py`): yüksek-eksiklikli (≥%30) kolonlara
+   `{col}_is_missing` + `missing_concentration`. İzole +0.52pp ort. (KANSER +2.5pp).
+2. **Master XGB Optuna ayarı + soft-voting ağırlık opt** (`pipeline.py`): XGB önceden default'tu;
+   ağırlık OOF'ta optimize edilir, `ensemble_meta.joblib`'e yazılır, `predict.py` oradan okur.
+   XGB trial = LGBM'in yarısı (10 dk bütçesi). Master'a marjinal etki.
+3. **Panellere ham soft-voting ensemble + panel-başına geçiş** (`panel_model.py`, `pipeline.py`):
+   KANSER +4.83pp, PAH +3.65pp (ensemble seçildi); CFTR tek-LGBM kaldı (gate kararı).
+4. **KAVRAMSAL DÜZELTME:** "Panellere **kalibrasyon** → ranking iyileşir" iddiası **F1 için
+   yanlış** (izotonik monotoniktir, eşik sonradan optimize → F1/AUC değişmez). Üstelik OOF-fit
+   kalibratörü full-data modele uygulamak inference eşiğini bozuyordu (**CFTR all-zero hatası**).
+   → Paneller **kalibrasyonsuz** ham ortalama kullanır. Master kalibrasyonu korunur (büyük veride
+   transfer sağlıklı). Kazanç ensemble **çeşitliliğinden** gelir, kalibrasyondan değil.
+5. **Bütçe kararı:** Faz 1.4 (Optuna 30→50) **yapılmadı** (zaten ~bütçe sınırı).
+
 ## Komutlar
 
 ```powershell
@@ -91,11 +112,14 @@ py scripts/predict.py data/raw/YARISMA_TRAIN_CFTR.csv --panel CFTR --submission-
 ## Bilinen takip konuları (kullanıcı "sonra konuşacağız" dedi — kendiliğinden yapma)
 
 - ~~Eğitim/test prior kayması~~ → çözüldü (karar #3).
+- ~~Panel mimarisi (ensemble)~~ → çözüldü (2026-06-22 karar #3; **ham** soft-voting, kalibrasyonsuz).
+- ~~Eksiklik bayrağı~~ → eklendi (2026-06-22 karar #1).
 - **Olasılık prior-kalibrasyonu:** olasılıkların da test prior'una göre kalibrasyonu (F1 için
   gerekmez; kalibrasyon kalitesi için).
-- **Panel mimarisi:** Panellere kalibrasyon ve/veya LGBM+XGB ensemble eklenmesi.
-- **Raporun küçük uyumsuzlukları:** çok-seed CV, Optuna 50–100 deneme, soft-voting'e kalibre LR,
-  eksiklik bayrağı/aykırı değer/label smoothing.
+- **PAH/CFTR ince ayar:** PAH-özel hiperparametre tuning; CFTR'de eksiklik-bayrağı için panel-bazlı
+  özellik dışlama (ranking sağlam, ertelendi). Bkz. `docs/sonraki-adimlar.md`.
+- **Raporun küçük uyumsuzlukları (açık):** çok-seed CV, Optuna 50–100 deneme (bütçe: 30+XGB 15),
+  soft-voting'e kalibre LR, aykırı değer/label smoothing.
 
 ## Çalışma tarzı notları
 

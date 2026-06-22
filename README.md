@@ -68,31 +68,31 @@ flowchart TD
     subgraph Preprocessing ["2. Ön İşleme & Ölçekleme"]
         F --> G(VariantFeatureEncoder)
         G --> H[Kategorik Encoding & Frekans Özellikleri]
+        G --> I["Eksiklik Bayrağı: is_missing + missing_concentration"]
         G --> J[Eksiklik >%60: Kolon Düşürme]
         G --> K[Eksiklik %30-%60: IterativeImputer]
         G --> L[Eksiklik <%30: Medyan Imputer]
         G --> M[RobustScaler Ölçekleme]
-        H & J & K & L & M --> N[Ön İşlemeden Geçmiş Veri]
+        H & I & J & K & L & M --> N[Ön İşlemeden Geçmiş Veri]
     end
 
     subgraph Master_Pipeline ["3. Genel (Master) Model Süreci"]
-        N --> O(Optuna Bayesian Optimizasyon)
+        N --> O("Optuna Ayarı: LightGBM + XGBoost")
         N --> Q(5-Fold Stratified CV)
         Q --> R[LightGBM & XGBoost OOF Tahminleri]
         R --> S(Isotonic Olasılık Kalibrasyonu)
-        S --> T{Ensemble Seçimi}
+        S --> T{"Ensemble Seçimi: ağırlık-opt soft-voting vs stacking"}
         O & T --> V[Eğitilmiş Master Modelleri & Kalibratörler]
     end
 
     subgraph Panel_Pipeline ["4. Bağımsız Panel Modelleri"]
-        N --> X[Panel Verisiyle Bağımsız LightGBM Eğitimi]
+        N --> X[Panel Verisiyle Bağımsız LGBM + XGBoost Eğitimi]
         X --> Y(Repeated Stratified 5-Fold CV)
-        Y --> Z[OOF Tahminleri]
-        Z --> AA(Test Prior'una Göre Eşik Optimizasyonu)
+        Y --> Z["LGBM & Ham Soft-Voting Ensemble OOF"]
+        Z --> GATE{"Panel-başına Geçiş: ensemble vs tek-LGBM (OOF test-prior F1)"}
+        GATE --> AA(Test Prior'una Göre Eşik Optimizasyonu)
         AA --> CC[Eğitilmiş Panel Modelleri & Panel Eşikleri]
     end
-
-    V --> AA
 ```
 
 ## Sonuçlar
@@ -101,14 +101,18 @@ flowchart TD
 
 > **"Beklenen Test F1" nedir?** İki sütun da **aynı metriği** — patojenik sınıfın (class 1) F1'ini — gösterir; tek fark hangi sınıf dağılımında ölçüldüğüdür. Eğitim/OOF dağılımı ~%80 patojenik, **final test seti ise ~%20 patojeniktir** (Q&A). Yarışma skoru test setinde ölçüleceği için gerçek sıralama metriği **Beklenen Test F1** sütunudur. Recall ve specificity sınıf oranından bağımsız olduğundan bunları sabit tutup precision'ı test prior'unda (%20) yeniden hesaplarız. OOF F1 yalnızca referanstır (yanlış dağılımda olduğu için yüksek görünür).
 
-| Model | OOF Class 1 F1 | **Beklenen Test F1** | Recall | Specificity | ROC-AUC |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Master | 0.7923 | **0.5951** | 0.6933 | 0.8408 | 0.8492 |
-| KANSER | 0.7887 | **0.6455** | 0.6830 | 0.8917 | 0.8858 |
-| PAH | 0.7880 | **0.4974** | 0.6840 | 0.7333 | 0.7636 |
-| CFTR | 0.7413 | **0.7413** | 0.5889 | 1.0000 | 0.8905 |
+| Model | OOF Class 1 F1 | **Beklenen Test F1** | Recall | Specificity | ROC-AUC | Model tipi |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Master | 0.8336 | **0.5939** | 0.7666 | 0.7962 | 0.8593 | kalibre LGBM+XGB soft-voting |
+| KANSER | 0.8428 | **0.7138** | 0.7585 | 0.9083 | 0.9164 | LGBM+XGB ham ensemble |
+| PAH | 0.7886 | **0.5601** | 0.6743 | 0.8167 | 0.8031 | LGBM+XGB ham ensemble |
+| CFTR | 0.7671 | **0.7671** | 0.6222 | 1.0000 | 0.8905 | tek LGBM (gate kararı) |
 
-Eşik, test prior'u (%20) altında class 1 F1'i maksimize edecek şekilde seçilir. PAH en zor panel (düşük ROC-AUC); CFTR en iyi (yanlış-pozitif yok → specificity 1.0, bu yüzden iki F1 eşit). Ayrıntı: `docs/rapor_guncellemeleri.md`.
+Eşik, test prior'u (%20) altında class 1 F1'i maksimize edecek şekilde seçilir. Paneller, OOF
+test-prior F1'i tek-LGBM'i geçerse LGBM+XGB **ham soft-voting ensemble** kullanır (panel-başına
+geçiş/gate); KANSER ve PAH ensemble seçti, CFTR tek modelde kaldı. PAH en zor panel (düşük
+ROC-AUC); CFTR'de yanlış-pozitif yok → specificity 1.0, bu yüzden iki F1 eşit. Ayrıntı ve
+baseline'a göre kazanç (ortalama +1.81pp): `docs/rapor_guncellemeleri.md`.
 
 ## Notlar
 

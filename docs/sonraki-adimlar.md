@@ -3,22 +3,25 @@
 Bu dosya, final aşaması hazırlığında **nereden devam edileceğini** özetler. Karar geçmişi
 ve gerekçeler için `docs/rapor_guncellemeleri.md`'ye, proje kurallarına `CLAUDE.md`'ye bakın.
 
-## Şu ana kadar yapılanlar (branch: `feat/independent-panels-and-recall-removal`)
+## Şu ana kadar yapılanlar
 
+**Önceki tur (merge edildi, PR #3):**
 1. **Panel modelleri master'dan bağımsızlaştırıldı** — `master_soft_prediction` sızıntısı
    kaldırıldı; her panel yalnızca kendi verisiyle eğitiliyor (Q&A: 4 bağımsız model).
-2. **Recall ≥ 0.90 kısıtı kaldırıldı** (`CLINICAL_RECALL_TARGET = 0.0`) — eşik doğrudan
-   class 1 F1'i maksimize ediyor.
-3. **Test prior'una göre eşik** (`TEST_PATHOGENIC_PRIOR = 0.20`) — eşik, gerçek test
-   dağılımında (~%20 patojenik) class 1 F1'i maksimize ediyor; raporlara `Class1_F1_TestPrior`
-   eklendi (gerçek yarışma skoru öngörüsü).
-4. **Repo sağlamlaştırma** — sürümler sabitlendi, `.gitignore`'a `venv/`, README sadeleştirildi.
+2. **Recall ≥ 0.90 kısıtı kaldırıldı** (`CLINICAL_RECALL_TARGET = 0.0`).
+3. **Test prior'una göre eşik** (`TEST_PATHOGENIC_PRIOR = 0.20`) — `Class1_F1_TestPrior` raporlanıyor.
 
-**Güncel beklenen test F1 (gerçek sıralama metriği öngörüsü):**
-Master 0.595 · KANSER 0.645 · PAH 0.497 · CFTR 0.741 (ortalama ~0.62).
+**Bu tur (2026-06-22, F1 maksimizasyon turu — detay `rapor_guncellemeleri.md` Değişiklik 5–7):**
+4. **Eksiklik bayrağı özellikleri** (`src/preprocessing.py`) — yüksek-eksiklikli kolonlara
+   `{col}_is_missing` + `missing_concentration`. Ortalama +0.52pp.
+5. **Master XGBoost Optuna ayarı + soft-voting ağırlık optimizasyonu** (`src/pipeline.py`) —
+   XGB artık ayarlı (önceden default), ağırlık OOF'ta optimize ediliyor (`predict.py` meta'dan okur).
+6. **Panellere ham (kalibrasyonsuz) soft-voting ensemble + panel-başına geçiş** — KANSER & PAH
+   ensemble kazandı, CFTR tek-LGBM kaldı (gate kararı). CFTR inference all-zero hatası düzeltildi.
 
-> Bu branch henüz `main`'e merge edilmedi. İlk iş: PR açıp gözden geçirip merge etmek.
-> PR: https://github.com/MEN-INA/pathGuard/pull/new/feat/independent-panels-and-recall-removal
+**Güncel beklenen test F1 (baseline → güncel):**
+Master 0.590→**0.594** · KANSER 0.666→**0.714** · PAH 0.524→**0.560** · CFTR 0.784→0.767 ·
+**ortalama 0.641→0.659 (+1.81pp)**. Çalışma ~6.6 dk. Tüm inference dağılımları sağlıklı.
 
 ## Açık hedef
 
@@ -29,15 +32,19 @@ ROC/PR-AUC)** artırmaktan gelir.
 ## Öncelikli yol haritası (etki sırasına göre)
 
 ### A. Performans — en yüksek getiri
-1. **PAH panelini güçlendir (en zayıf, ROC-AUC 0.76).** Beklenen test F1'i (0.50) en çok
-   bu çekiyor. Denenecekler: panel-özel özellik mühendisliği, daha güçlü düzenlileştirme
-   araması, sentetik veri (yarışma izin veriyor), gerekirse panel için farklı model.
-2. **Eksiklik bayrağı özelliği** (`src/preprocessing.py`). Yüksek-eksiklikli kolonlar için
-   ikili "eksik mi" özelliği ekle. Rapor "eksikliğin kendisi bilgilendiricidir" diyor →
-   hem rapora uyum hem olası F1 kazancı. **Hızlı ve düşük riskli; ilk buradan başla.**
-3. **Panellere kalibrasyon/ensemble.** Şu an her panel tek LightGBM. Master'daki kalibre
-   LGBM+XGB soft-voting'i panellere de uygulamak ranking'i iyileştirebilir (küçük örneklemde
-   overfit'e dikkat).
+1. ~~**Eksiklik bayrağı özelliği**~~ → **YAPILDI** (bu tur, +0.52pp ort.).
+2. ~~**Panellere ensemble**~~ → **YAPILDI** (bu tur, ham soft-voting + panel-başına geçiş;
+   KANSER +4.83pp, PAH +3.65pp). **NOT/DÜZELTME:** Önceki "panellere **kalibrasyon** →
+   ranking iyileşir" maddesi F1 için yanlıştı — izotonik kalibrasyon monotoniktir, eşik
+   sonradan optimize edildiğinden F1'i/AUC'yi değiştirmez; kazanç **ensemble çeşitliliğinden**
+   gelir. Üstelik OOF-fit kalibratör full-data modele uygulanınca inference eşiği bozuluyordu
+   (CFTR all-zero) → paneller **kalibrasyonsuz** ham ortalama kullanır.
+3. **PAH'ı daha da güçlendir (hâlâ en zayıf, 0.560).** Ensemble +3.65pp verdi ama PAH dipte.
+   Denenecekler: PAH-özel hiperparametre tuning (paneller şu an sabit param), panel-özel özellik
+   mühendisliği, sentetik veri (yarışma izin veriyor — ama AUC taban-orandan bağımsız olduğu
+   için beklenen getiri düşük). Küçük sette overfit'e dikkat; OOF test-prior F1 ile doğrula.
+4. **CFTR missing-flag hassasiyeti.** Eksiklik bayrakları CFTR'yi ~−1.7pp etkiledi (recall
+   granülaritesi; ranking sağlam). Panel-bazlı özellik dışlama ~+0.4pp kazandırabilir (belirsiz).
 
 ### B. Rapor-kod uyumu (kozmetik → düşük öncelik)
 4. **Aykırı değer taraması + label smoothing** (`src/data_loader.py` / eğitim) — gürültülü
