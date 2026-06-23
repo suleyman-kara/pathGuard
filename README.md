@@ -101,9 +101,11 @@ flowchart TD
 
 > **"Beklenen Test F1" nedir?** İki sütun da **aynı metriği** — patojenik sınıfın (class 1) F1'ini — gösterir; tek fark hangi sınıf dağılımında ölçüldüğüdür. Eğitim/OOF dağılımı ~%80 patojenik, **final test seti ise ~%20 patojeniktir** (Q&A). Yarışma skoru test setinde ölçüleceği için gerçek sıralama metriği **Beklenen Test F1** sütunudur. Recall ve specificity sınıf oranından bağımsız olduğundan bunları sabit tutup precision'ı test prior'unda (%20) yeniden hesaplarız. OOF F1 yalnızca referanstır (yanlış dağılımda olduğu için yüksek görünür).
 
+Sonuçlar **deterministiktir** (Optuna dâhil tüm adımlar `seed=42`); `--trials 30` ile tekrar üretilebilir.
+
 | Model | OOF Class 1 F1 | **Beklenen Test F1** | Recall | Specificity | ROC-AUC | Model tipi |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Master | 0.8336 | **0.5939** | 0.7666 | 0.7962 | 0.8593 | kalibre LGBM+XGB soft-voting |
+| Master | 0.8216 | **0.6043** | 0.7416 | 0.8219 | 0.8609 | kalibre LGBM+XGB soft-voting |
 | KANSER | 0.8428 | **0.7138** | 0.7585 | 0.9083 | 0.9164 | LGBM+XGB ham ensemble |
 | PAH | 0.7886 | **0.5601** | 0.6743 | 0.8167 | 0.8031 | LGBM+XGB ham ensemble |
 | CFTR | 0.7671 | **0.7671** | 0.6222 | 1.0000 | 0.8905 | tek LGBM (gate kararı) |
@@ -112,7 +114,7 @@ Eşik, test prior'u (%20) altında class 1 F1'i maksimize edecek şekilde seçil
 test-prior F1'i tek-LGBM'i geçerse LGBM+XGB **ham soft-voting ensemble** kullanır (panel-başına
 geçiş/gate); KANSER ve PAH ensemble seçti, CFTR tek modelde kaldı. PAH en zor panel (düşük
 ROC-AUC); CFTR'de yanlış-pozitif yok → specificity 1.0, bu yüzden iki F1 eşit. Ayrıntı ve
-baseline'a göre kazanç (ortalama +1.81pp): `docs/rapor_guncellemeleri.md`.
+baseline'a göre kazanç (ortalama 0.6406 → 0.6613, **+2.07pp**): `docs/rapor_guncellemeleri.md`.
 
 ## Notlar
 

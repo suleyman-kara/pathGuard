@@ -216,18 +216,35 @@ faydasından büyüktü.
 
 ---
 
-## Toplam etki (baseline → güncel, beklenen test class 1 F1)
+## Değişiklik 8 — Optuna sampler seed (tekrarüretilebilirlik)
 
-| Model | Baseline | Güncel | Δ | Final model tipi |
-| --- | ---: | ---: | ---: | --- |
-| Master | 0.5896 | 0.5939 | +0.43pp | kalibre LGBM+XGB soft-voting |
-| KANSER | 0.6655 | **0.7138** | +4.83pp | LGBM+XGB ham ensemble |
-| PAH | 0.5236 | **0.5601** | +3.65pp | LGBM+XGB ham ensemble |
-| CFTR | 0.7838 | 0.7671 | −1.67pp | tek LGBM (gate kararı) |
-| **Ortalama** | **0.6406** | **0.6587** | **+1.81pp** | |
+**Tarih:** 2026-06-23
 
-Çalışma süresi ~6.6 dk (10 dk bütçesi içinde). Tüm 4 modelin inference dağılımı sağlıklı (CFTR
-all-zero hatası düzeltildi). Bu, **dürüst ve dağıtılabilir** bir iyileşmedir.
+**Ne yapıldı?** `src/pipeline.py`: LGBM ve XGB Optuna study'leri artık
+`sampler=optuna.samplers.TPESampler(seed=RANDOM_SEED)` ile oluşturuluyor (önceden seedsizdi).
+
+**Neden?** Rapor "random_state=42 tüm adımlarda; sonuçlar tam tekrarlanabilir" diyor; ancak
+Optuna sampler'ı seedsiz olduğu için master koşular arası ~±0.2pp oynuyordu (stacking↔soft-voting,
+ağırlık 0.2↔0.9). Bu, rapor iddiasıyla **hizalanma**dır (sapma değil) ve **sıfır F1 riski** taşır;
+master seçimini stabilize eder. Bu seed ile master daha iyi bir konfigürasyona oturdu
+(0.5939 → **0.6043**) ve sonuç artık deterministiktir.
+
+---
+
+## Toplam etki (baseline → güncel, beklenen test class 1 F1) — deterministik
+
+`py scripts/train.py --trials 30` (Optuna seedli, tekrarüretilebilir):
+
+| Model | Baseline | Güncel | Δ | OOF F1 | ROC-AUC | Final model tipi |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Master | 0.5896 | **0.6043** | +1.47pp | 0.8216 | 0.8609 | kalibre LGBM+XGB soft-voting |
+| KANSER | 0.6655 | **0.7138** | +4.83pp | 0.8428 | 0.9164 | LGBM+XGB ham ensemble |
+| PAH | 0.5236 | **0.5601** | +3.65pp | 0.7886 | 0.8031 | LGBM+XGB ham ensemble |
+| CFTR | 0.7838 | 0.7671 | −1.67pp | 0.7671 | 0.8905 | tek LGBM (gate kararı) |
+| **Ortalama** | **0.6406** | **0.6613** | **+2.07pp** | | | |
+
+Çalışma süresi ~7.3 dk SHAP dahil (10 dk bütçesi içinde). Tüm 4 modelin inference dağılımı sağlıklı
+(CFTR all-zero hatası düzeltildi). Bu, **dürüst, deterministik ve dağıtılabilir** bir iyileşmedir.
 
 ---
 

@@ -72,8 +72,9 @@ Yarışma sıralama metriği yalnızca F1'dir (TP/FP/FN üzerinden, patojenik s�
 
 ## Bu turda yapılan kararlar (2026-06-22 — F1 maksimizasyon turu)
 
-Detay: `docs/rapor_guncellemeleri.md` Değişiklik 5–7. **Ortalama beklenen test F1: 0.641 → 0.659
-(+1.81pp), ~6.6 dk.** Doğrulama metriği **`Class1_F1_TestPrior`** (OOF F1 değil).
+Detay: `docs/rapor_guncellemeleri.md` Değişiklik 5–8. **Ortalama beklenen test F1 (deterministik):
+0.6406 → 0.6613 (+2.07pp), ~7 dk (SHAP dahil).** Master **0.6043** · KANSER **0.7138** · PAH
+**0.5601** · CFTR **0.7671**. Doğrulama metriği **`Class1_F1_TestPrior`** (OOF F1 değil).
 
 1. **Eksiklik bayrağı özellikleri** (`preprocessing.py`): yüksek-eksiklikli (≥%30) kolonlara
    `{col}_is_missing` + `missing_concentration`. İzole +0.52pp ort. (KANSER +2.5pp).
@@ -88,6 +89,9 @@ Detay: `docs/rapor_guncellemeleri.md` Değişiklik 5–7. **Ortalama beklenen te
    → Paneller **kalibrasyonsuz** ham ortalama kullanır. Master kalibrasyonu korunur (büyük veride
    transfer sağlıklı). Kazanç ensemble **çeşitliliğinden** gelir, kalibrasyondan değil.
 5. **Bütçe kararı:** Faz 1.4 (Optuna 30→50) **yapılmadı** (zaten ~bütçe sınırı).
+6. **(2026-06-23) Optuna sampler seed** (`TPESampler(seed=RANDOM_SEED)`, her iki study): rapor
+   "tam tekrarüretilebilir" iddiasıyla hizalama. Master ±0.2pp koşu-arası oynamasını giderir;
+   sonuç deterministik, master 0.5939 → **0.6043** (sıfır F1 riski).
 
 ## Komutlar
 
@@ -105,21 +109,27 @@ py scripts/train.py --trials 30
 py scripts/predict.py data/raw/YARISMA_TRAIN_CFTR.csv --panel CFTR --submission-only --output cftr.csv
 ```
 
-## Sonraki adımlar / yol haritası
+## Q&A / şartname uyumu (teyitli — 2026-06-23 kapanış kontrolü)
 
-Önceliklendirilmiş ilerleme planı: **`docs/sonraki-adimlar.md`**. (İlk iş: `feat/independent-panels-and-recall-removal` branch'ini PR ile main'e merge etmek.)
+Doküman önceliği: `soru-cevap.md` > `yarisma-raporu.md` > `yarisma-sartnamesi.md`. **Sert çelişki yok:**
+- **4 ayrı/bağımsız model** ✓ (MASTER+KANSER+PAH+CFTR) · **F1 patojenik (class 1)** ✓ (`Class1_F1_TestPrior`)
+- **train ~%80 / test ~%20** ✓ (`TEST_PATHOGENIC_PRIOR=0.20`; şartnamenin 2909/1381/~1500 dengeli sayıları **HATALI**, Q&A esas)
+- **İkili çıktı, olasılık değil** ✓ (`predict.py --submission-only` → yalnız `Variant_ID,Prediction`; Q&A satır 38)
+- **Eksik ≠ sıfır** ✓ (`MISSING_DUMMY`, eşiğe göre imputasyon, eksiklik bayrağı) · **dış veri tabanı YOK** ✓
+- **Sentetik veri izinli ama opsiyonel** (kullanmıyoruz → uyumlu)
 
-## Bilinen takip konuları (kullanıcı "sonra konuşacağız" dedi — kendiliğinden yapma)
+## Açık / opsiyonel maddeler (KAPANIŞ yapıldı — belirsizle UĞRAŞMA, yalnız kayıt)
 
-- ~~Eğitim/test prior kayması~~ → çözüldü (karar #3).
-- ~~Panel mimarisi (ensemble)~~ → çözüldü (2026-06-22 karar #3; **ham** soft-voting, kalibrasyonsuz).
-- ~~Eksiklik bayrağı~~ → eklendi (2026-06-22 karar #1).
-- **Olasılık prior-kalibrasyonu:** olasılıkların da test prior'una göre kalibrasyonu (F1 için
-  gerekmez; kalibrasyon kalitesi için).
-- **PAH/CFTR ince ayar:** PAH-özel hiperparametre tuning; CFTR'de eksiklik-bayrağı için panel-bazlı
-  özellik dışlama (ranking sağlam, ertelendi). Bkz. `docs/sonraki-adimlar.md`.
-- **Raporun küçük uyumsuzlukları (açık):** çok-seed CV, Optuna 50–100 deneme (bütçe: 30+XGB 15),
-  soft-voting'e kalibre LR, aykırı değer/label smoothing.
+Aşağıdakiler **bilinçli uygulanmadı** (getirisi belirsiz/riskli veya ~0 F1). İstenirse açılır:
+- **PAH-özel hiperparametre tuning** — paneller şu an sabit param; küçük sette overfit riski.
+- **CFTR panel-bazlı özellik-dışlama** — eksiklik bayrakları CFTR'yi ~−1.7pp etkiledi ama ROC-AUC
+  sağlam; fark 111 örnekte gürültü olabilir (~+0.4pp belirsiz).
+- **Olasılık prior-kalibrasyonu** — F1 için gerekmez (reliability/Brier kalitesi için).
+- **Açık rapor-kod farkları** — çok-seed CV (kod tek seed=42), Optuna 50–100 (kod 30 + XGB 15),
+  soft-voting'e kalibre LR (kod: LR yalnız stacker), label smoothing & aykırı değer taraması (yok).
+- **YAPISAL SINIRLAMA:** "değişimsiz varyant (ref==alt)" tespiti kolon adları gizli olduğu için
+  YAPILAMAZ (Q&A satır 33). Yanlış-etiketli kayıtlar dedup ile (çelişkili etiketler silinir) ele alınır.
+- ~~Prior kayması · panel ensemble · eksiklik bayrağı · tekrarüretilebilirlik~~ → **çözüldü** (yukarıdaki kararlar).
 
 ## Çalışma tarzı notları
 

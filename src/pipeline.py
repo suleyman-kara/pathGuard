@@ -141,7 +141,10 @@ class PathGuardTrainingPipeline:
             precision, recall, _ = precision_recall_curve(y, oof_probs)
             return float(auc(recall, precision))
 
-        study = optuna.create_study(direction="maximize")
+        study = optuna.create_study(
+            direction="maximize",
+            sampler=optuna.samplers.TPESampler(seed=RANDOM_SEED),
+        )
         with tqdm(total=self.n_trials, desc="Optuna Optimization", unit="trial") as pbar:
             def callback(study: optuna.Study, trial: optuna.Trial) -> None:
                 pbar.update(1)
@@ -187,7 +190,10 @@ class PathGuardTrainingPipeline:
         # yalnızca ~0.1pp katarken çalışma süresini ~3 dk artırıyordu (10 dk bütçesi). Kazancın
         # çoğu zaten eksiklik bayrakları + LGBM ayarından geliyor; XGB çeşitlilik için yeterli.
         xgb_trials = max(1, self.n_trials // 2)
-        study = optuna.create_study(direction="maximize")
+        study = optuna.create_study(
+            direction="maximize",
+            sampler=optuna.samplers.TPESampler(seed=RANDOM_SEED),
+        )
         with tqdm(total=xgb_trials, desc="Optuna XGB Optimization", unit="trial") as pbar:
             def callback(study: optuna.Study, trial: optuna.Trial) -> None:
                 pbar.update(1)
