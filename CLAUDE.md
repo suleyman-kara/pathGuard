@@ -72,7 +72,7 @@ Yarışma sıralama metriği yalnızca F1'dir (TP/FP/FN üzerinden, patojenik s�
 
 ## Bu turda yapılan kararlar (2026-06-22 — F1 maksimizasyon turu)
 
-Detay: `docs/rapor_guncellemeleri.md` Değişiklik 5–8. **Ortalama beklenen test F1 (deterministik):
+Detay (rapor↔kod farkları, rapora ekle/çıkar): `docs/rapor_guncellemeleri.md`. **Ortalama beklenen test F1 (deterministik):
 0.6406 → 0.6613 (+2.07pp), ~7 dk (SHAP dahil).** Master **0.6043** · KANSER **0.7138** · PAH
 **0.5601** · CFTR **0.7671**. Doğrulama metriği **`Class1_F1_TestPrior`** (OOF F1 değil).
 
